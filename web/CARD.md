@@ -5,8 +5,8 @@ Status: implemented in `../ha-house-control/`.
 ## Goal
 
 `custom:house-control-card` renders the 3D home from the plan JSON inside a normal
-Lovelace card, reflects Home Assistant entity states, and fires `fire-dom-event` actions
-from taps, long presses and double taps on lamps, ACs and rooms.
+Lovelace card, reflects Home Assistant entity states, and runs the configured tap, hold
+and double-tap actions on lamps, ACs and rooms.
 
 ## Scope
 
@@ -43,7 +43,7 @@ type: custom:house-control-card
 plan_url: /local/house-control/plan.json   # or inline plan: {...}
 quality: low                               # low | high
 
-# Actions per plan device id; there are no default/global actions
+# Actions per plan device id; add only the gestures you want
 devices:
   living.main:
     tap_action:
@@ -73,16 +73,37 @@ rooms:
         # room menu
 ```
 
-- Every lamp/AC gets its actions under `devices.<id>`. There is no default/global action; a device without an entry does nothing.
+- There are no default actions. A lamp, AC or room without a `tap_action` does nothing on tap; hold/double still work when configured.
+- Optional `level` sets the initial floor id; otherwise the floor last chosen on this plan name is restored, then the first floor.
+- For development, `plan` can hold the plan object inline instead of `plan_url`.
 - `rooms.<id>` configures that room's actions. There is no global room action.
 - Keys are plan ids, not HA entity ids.
 
 ## Actions
 
-Only `fire-dom-event` is implemented for v1. No action means nothing happens.
+Supported actions: `fire-dom-event`, `toggle`, `turn_on`, `turn_off` and `call-service`.
+Use `toggle` for off → on / on → off, or `turn_on` for on-only.
 
-The card dispatches exactly the configured action, with no automatic `entity_id`, room or
-target added:
+### Call a service
+
+```yaml
+devices:
+  living.main:
+    tap_action:
+      action: call-service
+      service: light.turn_on
+      data:
+        brightness_pct: 80
+      # optional; otherwise the plan device's entity_id is used
+      target:
+        entity_id: light.bardi_9w_rgbww_bulb
+```
+
+`service` is `domain.service`; `data` is the service data; `target` is optional and lets a
+room or a fixed entity be the service target.
+
+`fire-dom-event` dispatches exactly the configured action, with no automatic `entity_id`,
+room or target added:
 
 ```js
 this.dispatchEvent(new CustomEvent('ll-custom', {
@@ -108,7 +129,7 @@ tap_action:
 - `double_tap_action`: two taps within about 300 ms; when configured, the single tap waits
   for that window.
 - Lamps and ACs win over room floors when both are under the pointer.
-- No camera drag/zoom. Vertical page scrolling remains available.
+- A drag moves the camera; a gesture only fires when the pointer stays within about 5 px.
 
 ## State mapping
 
@@ -189,7 +210,7 @@ migrated when edited). The Bindings dialog and duplicate/export logic use the sa
 
 - `background: true`, fixed positioning, transparent themes, card-mod integration.
 - Child cards inside the 3D card.
-- `more-info`, `toggle`, `call-service`, `url`, `navigate` actions.
+- `more-info`, `url` and `navigate` actions.
 - Room entity ids in the plan/editor.
 - Auto-refreshing the plan.
 - HACS packaging.
@@ -199,9 +220,11 @@ migrated when edited). The Bindings dialog and duplicate/export logic use the sa
 - Card loads a plan from `/local/...` in a panel view and fills the panel.
 - Rounded and diagonal rooms render.
 - Lamps/ACs reflect Home Assistant state changes.
-- Tap, hold and double tap fire `ll-custom` with the exact configured action config.
-- Per-device and per-room actions fire correctly; a lamp/AC or room without config does nothing.
+- Tap, hold and double tap run their configured action (`fire-dom-event`, `toggle`, `turn_on`, `turn_off` or `call-service`).
+- Per-device and per-room actions fire correctly.
+- A target without `tap_action` does nothing on tap; actions fire only when configured.
 - A `popup_menu` listener receives the user's manually inserted `entity_id`.
+- Direct `toggle` (including climate on/off) and `call-service` actions call the right service.
 - Room taps fire the room action; rooms without config do nothing.
 - Floor switcher switches floors and counts lit lamps.
 - Invalid/missing plan shows the error state, not a crash.

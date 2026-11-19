@@ -64,20 +64,16 @@ for (const room of plan.rooms) {
   };
 }
 
-// Simulate a WebGL context whose getShaderPrecisionFormat is broken (some embedded
-// browsers). Open /?test&precision to check the lowp fallback.
-if (new URLSearchParams(location.search).has('precision')) {
-  const original = HTMLCanvasElement.prototype.getContext;
-  HTMLCanvasElement.prototype.getContext = function (type, attrs) {
-    const context = original.call(this, type, attrs);
-    if (context && String(type).startsWith('webgl')) context.getShaderPrecisionFormat = () => null;
-    return context;
-  };
-}
-
 const config = { plan_url: '/dev/demo-plan.json', quality: 'low', devices, rooms };
 card.setConfig(config);
-card.hass = { states, callService: async () => {} };
+const serviceCalls = [];
+window.__serviceCalls = serviceCalls;
+card.hass = {
+  states,
+  callService: async (domain, service, data, target) => {
+    serviceCalls.push({ domain, service, data, target });
+  },
+};
 window.__houseCard = card;
 
 if (new URLSearchParams(location.search).has('test')) {
@@ -144,6 +140,16 @@ if (new URLSearchParams(location.search).has('test')) {
   }, 4000);
 
   setTimeout(() => {
+    const light = plan.lights[0];
+    const ac = plan.acs[0];
+    if (light) {
+      card._fire({ action: 'toggle' }, { kind: 'light', id: light.id });
+      card._fire({ action: 'call-service', service: 'script.turn_on', target: { entity_id: light.entity_id } }, { kind: 'light', id: light.id });
+    }
+    if (ac) card._fire({ action: 'toggle' }, { kind: 'ac', id: ac.id });
+  }, 4800);
+
+  setTimeout(() => {
     const hit = findTarget();
     if (!hit) return;
     send(hit, 'pointerdown');
@@ -176,6 +182,7 @@ if (new URLSearchParams(location.search).has('test')) {
       holdEvent: window.__holdEvent || null,
       doubleEvent: window.__doubleEvent || null,
       error: error && !error.hidden ? error.textContent : null,
+      serviceCalls: window.__serviceCalls || [],
       lastEvent: window.__lastEvent || null,
     };
     log.textContent = JSON.stringify(window.__houseCheck);

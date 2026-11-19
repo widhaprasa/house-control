@@ -125,28 +125,3 @@
   border-radius: 9px;
   cursor: pointer;
 }
-
-.hc-preview {
-  position: absolute;
-  inset: 0;
-  z-index: 3;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 22px;
-  text-align: center;
-  font-size: 13px;
-  line-height: 1.45;
-  color: var(--secondary-text-color, #9aa4b8);
-  background:
-    radial-gradient(70% 60% at 50% 40%, rgba(61, 139, 255, 0.16), transparent 70%),
-    #0a0e1a;
-}
-.hc-preview[hidden] { display: none; }
-.hc-preview strong {
-  font-size: 15px;
-  font-weight: 650;
-  color: var(--primary-text-color, #e8ecf6);
-}

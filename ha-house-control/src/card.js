@@ -1,5 +1,5 @@
 // A normal Lovelace card for the House Control plan. It renders the 3D home, reflects
-// Home Assistant entity states, and fires ll-custom events for taps on lamps, ACs and rooms.
+// Home Assistant entity states, and runs configured actions for taps on lamps, ACs and rooms.
 import { normalize } from '../../web/src/config.js';
 import { createWorld } from '../../web/src/three/world.js';
 import { createHAStore } from './store.js';
@@ -8,7 +8,7 @@ import css from './card.css?inline';
 const QUALITY = new Set(['low', 'high']);
 const LONG_PRESS = 500;
 const DOUBLE_TAP = 300;
-const MOVE_LIMIT = 8;
+const DRAG_LIMIT = 5;
 const STAGE_BG = '#0a0e1a';
 
 class HouseControlCard extends HTMLElement {
@@ -21,10 +21,6 @@ class HouseControlCard extends HTMLElement {
         <canvas class="hc-canvas"></canvas>
         <div class="hc-loading">Loading the home…</div>
         <div class="hc-error" hidden></div>
-        <div class="hc-preview" hidden>
-          <strong>House Control</strong>
-          <span>The 3D home appears when the dashboard is saved.</span>
-        </div>
         <div class="hc-floors" hidden></div>
       </div>`;
 
@@ -32,7 +28,6 @@ class HouseControlCard extends HTMLElement {
     this._canvas = this.shadowRoot.querySelector('.hc-canvas');
     this._loading = this.shadowRoot.querySelector('.hc-loading');
     this._error = this.shadowRoot.querySelector('.hc-error');
-    this._previewEl = this.shadowRoot.querySelector('.hc-preview');
     this._floors = this.shadowRoot.querySelector('.hc-floors');
 
     this._config = null;
@@ -43,7 +38,6 @@ class HouseControlCard extends HTMLElement {
     this._level = null;
     this._token = 0;
     this._visible = true;
-    this._preview = false;
     this._worldFailed = false;
     this._gesture = null;
     this._gestures = false;
@@ -61,7 +55,7 @@ class HouseControlCard extends HTMLElement {
     this._onContextLost = (ev) => {
       ev.preventDefault();
       this._world?.setRunning(false);
-      this._showError(true, 'The 3D view lost its graphics context. Reload the page.');
+      this._showError(true, 'The 3D view lost its graphics context.');
     };
   }
 
@@ -74,30 +68,13 @@ class HouseControlCard extends HTMLElement {
       throw new Error('house-control-card needs "plan_url" (or an inline "plan")');
     }
     this._config = { quality: 'low', devices: {}, rooms: {}, ...config };
-    this._teardown();
     if (this.isConnected) this._start();
+    else this._teardown();
   }
 
   set hass(hass) {
     this._hass = hass;
-    if (this._store) {
-      this._store.updateFromHass(hass);
-      this._updateFloors();
-    }
-  }
-
-  // Home Assistant sets this while the card is shown in the card editor preview. Keep the
-  // preview light: do not create a WebGL context just to show a tiny editor thumbnail.
-  set preview(value) {
-    const next = Boolean(value);
-    if (next === this._preview) return;
-    this._preview = next;
-    if (next) {
-      this._teardown();
-      this._showPreview();
-    } else {
-      this._start();
-    }
+    if (this._store) this._store.updateFromHass(hass);
   }
 
   connectedCallback() {
@@ -120,15 +97,9 @@ class HouseControlCard extends HTMLElement {
 
   async _start() {
     if (!this.isConnected || !this._config) return;
-    if (this._preview) {
-      this._showPreview();
-      return;
-    }
     this._teardown();
-    this._hidePreview();
     this._worldFailed = false;
     const token = this._token;
-    this._showError(false);
     this._showLoading(true);
 
     try {
@@ -137,7 +108,7 @@ class HouseControlCard extends HTMLElement {
         : await this._fetchPlan(this._config.plan_url);
       if (token !== this._token || !this.isConnected) return;
 
-      const plan = normalize(structuredClone(raw));
+      const plan = normalize(raw);
       if (token !== this._token || !this.isConnected) return;
       this._plan = plan;
 
@@ -162,25 +133,20 @@ class HouseControlCard extends HTMLElement {
   }
 
   _maybeCreateWorld() {
-    if (!this._plan || this._world || !this.isConnected || this._preview || this._worldFailed) return;
+    if (!this._plan || this._world || !this.isConnected || this._worldFailed) return;
     if (!this._canvas.clientWidth || !this._canvas.clientHeight) return;
     try {
       this._world = createWorld(this._canvas, this._plan, this._store, {
         level: this._level,
         quality: QUALITY.has(this._config.quality) ? this._config.quality : 'low',
-        controls: true,
         background: STAGE_BG,
         onHover: () => {},
         onPick: () => {},
         onLevel: (id) => { this._level = id; this._updateFloors(); },
       });
       this._canvas.addEventListener('webglcontextlost', this._onContextLost, false);
-      this._world.setInsets(0, 0);
-      this._world.resize();
       this._applyRunning();
-      this._updateFloors();
       this._showLoading(false);
-      this._hidePreview();
     } catch (error) {
       this._worldFailed = true;
       this._showLoading(false);
@@ -192,8 +158,9 @@ class HouseControlCard extends HTMLElement {
     if (!url) throw new Error('No plan_url');
     const absolute = new URL(url, window.location.origin);
     const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 15000);
     this._fetchController = controller;
-    this._fetchTimer = setTimeout(() => controller.abort(), 15000);
+    this._fetchTimer = timer;
     try {
       const response = await fetch(absolute, {
         cache: 'no-store',
@@ -203,7 +170,9 @@ class HouseControlCard extends HTMLElement {
       if (!response.ok) throw new Error(`Plan not found (HTTP ${response.status})`);
       return await response.json();
     } finally {
-      clearTimeout(this._fetchTimer);
+      clearTimeout(timer);
+      if (this._fetchTimer === timer) this._fetchTimer = 0;
+      if (this._fetchController === controller) this._fetchController = null;
     }
   }
 
@@ -227,8 +196,9 @@ class HouseControlCard extends HTMLElement {
     this._unsub = null;
     this._store = null;
     if (this._world) {
-      this._world.dispose();
+      const world = this._world;
       this._world = null;
+      try { world.dispose(); } catch { /* a lost WebGL context can throw on cleanup */ }
     }
     this._plan = null;
     this._level = null;
@@ -236,7 +206,6 @@ class HouseControlCard extends HTMLElement {
     this._floors.replaceChildren();
     this._showError(false);
     this._showLoading(false);
-    this._hidePreview();
   }
 
   _ensureObservers() {
@@ -282,8 +251,8 @@ class HouseControlCard extends HTMLElement {
   _setLevel(id) {
     this._level = id;
     try { localStorage.setItem(this._levelKey(), id); } catch { /* private mode */ }
-    this._world?.setLevel(id);
-    this._updateFloors();
+    if (this._world) this._world.setLevel(id); // onLevel refreshes the buttons
+    else this._updateFloors();
   }
 
   _buildFloors() {
@@ -370,12 +339,12 @@ class HouseControlCard extends HTMLElement {
     const gesture = this._gesture = {
       x: ev.clientX, y: ev.clientY, moved: false, long: false, target, timer: 0,
     };
-    if (!target) return;
+    const hold = this._actionsFor(target)?.hold_action;
+    if (!hold) return;
     gesture.timer = setTimeout(() => {
       if (this._gesture !== gesture || gesture.moved || gesture.long) return;
       gesture.long = true;
-      const actions = this._actionsFor(target);
-      if (actions?.hold_action) this._fire(actions.hold_action);
+      this._fire(hold, target);
     }, LONG_PRESS);
   }
 
@@ -383,7 +352,7 @@ class HouseControlCard extends HTMLElement {
     if (!ev.isPrimary) { this._cancelGesture(); return; }
     const gesture = this._gesture;
     if (!gesture) return;
-    if (Math.hypot(ev.clientX - gesture.x, ev.clientY - gesture.y) > MOVE_LIMIT) {
+    if (Math.hypot(ev.clientX - gesture.x, ev.clientY - gesture.y) > DRAG_LIMIT) {
       gesture.moved = true;
       this._clearLong(gesture);
     }
@@ -395,6 +364,7 @@ class HouseControlCard extends HTMLElement {
     this._gesture = null;
     if (!gesture) return;
     this._clearLong(gesture);
+    if (Math.hypot(ev.clientX - gesture.x, ev.clientY - gesture.y) > DRAG_LIMIT) gesture.moved = true;
     if (gesture.moved || gesture.long || !gesture.target) return;
     this._handleTap(gesture.target);
   }
@@ -417,11 +387,11 @@ class HouseControlCard extends HTMLElement {
 
   _handleTap(target) {
     const actions = this._actionsFor(target);
-    if (!actions) return;
+    const tapAction = actions?.tap_action ?? null;
 
-    if (!actions.double_tap_action) {
+    if (!actions?.double_tap_action) {
       this._clearPendingTap();
-      if (actions.tap_action) this._fire(actions.tap_action);
+      if (tapAction) this._fire(tapAction, target);
       return;
     }
 
@@ -430,7 +400,7 @@ class HouseControlCard extends HTMLElement {
     if (last && now - last.time <= DOUBLE_TAP
       && last.target.kind === target.kind && last.target.id === target.id) {
       this._clearPendingTap();
-      this._fire(actions.double_tap_action);
+      this._fire(actions.double_tap_action, target);
       return;
     }
 
@@ -439,7 +409,7 @@ class HouseControlCard extends HTMLElement {
     this._tapTimer = setTimeout(() => {
       this._tapTimer = 0;
       this._lastTap = null;
-      if (actions.tap_action) this._fire(actions.tap_action);
+      if (tapAction) this._fire(tapAction, target);
     }, DOUBLE_TAP);
   }
 
@@ -449,13 +419,66 @@ class HouseControlCard extends HTMLElement {
     this._lastTap = null;
   }
 
-  _fire(action) {
-    if (!action || action.action !== 'fire-dom-event') return;
-    this.dispatchEvent(new CustomEvent('ll-custom', {
-      detail: action,
-      bubbles: true,
-      composed: true,
-    }));
+  _entityFor(target, action) {
+    const raw = action.entity_id || action.target?.entity_id;
+    const explicit = Array.isArray(raw) ? raw[0] : raw;
+    if (explicit) return explicit;
+    if (!target || !this._plan) return null;
+    const list = target.kind === 'light' ? this._plan.lights : target.kind === 'ac' ? this._plan.acs : [];
+    const device = list.find((item) => item.id === target.id);
+    return device?.entity_id || device?.entity || null;
+  }
+
+  _fire(action, target) {
+    if (!action) return;
+    if (action.action === 'fire-dom-event') {
+      this.dispatchEvent(new CustomEvent('ll-custom', {
+        detail: action,
+        bubbles: true,
+        composed: true,
+      }));
+      return;
+    }
+    if (['toggle', 'turn_on', 'turn_off'].includes(action.action)) {
+      this._serviceAction(action, target);
+      return;
+    }
+    if (action.action === 'call-service') {
+      this._callService(action, target);
+    }
+  }
+
+  _serviceAction(action, target) {
+    const entity = this._entityFor(target, action);
+    if (typeof entity !== 'string' || !this._hass?.callService) return;
+    const domain = entity.split('.')[0];
+    const raw = this._hass.states?.[entity]?.state;
+    const on = domain === 'climate'
+      ? Boolean(raw) && raw !== 'off' && raw !== 'unavailable' && raw !== 'unknown'
+      : raw === 'on';
+    let service = null;
+    if (action.action === 'turn_on') { if (!on) service = 'turn_on'; }
+    else if (action.action === 'turn_off') { if (on) service = 'turn_off'; }
+    else service = on ? 'turn_off' : 'turn_on';
+    if (!service) return;
+    this._runService(domain, service, { entity_id: entity });
+  }
+
+  _callService(action, target) {
+    const [domain, service] = String(action.service || '').split('.');
+    if (!domain || !service) return;
+    const entity = this._entityFor(target, action);
+    const targetSpec = action.target || (entity ? { entity_id: entity } : undefined);
+    this._runService(domain, service, action.data || {}, targetSpec);
+  }
+
+  _runService(domain, service, data, target) {
+    if (!this._hass?.callService) return;
+    try {
+      Promise.resolve(this._hass.callService(domain, service, data, target)).catch(() => {});
+    } catch {
+      // Ignore a synchronous service-call failure; the card must keep working.
+    }
   }
 
   /* ---------- loading and errors ---------- */
@@ -464,18 +487,8 @@ class HouseControlCard extends HTMLElement {
     this._loading.hidden = !show;
   }
 
-  _showPreview() {
-    this._showError(false);
-    this._showLoading(false);
-    this._floors.hidden = true;
-    this._previewEl.hidden = false;
-  }
-
-  _hidePreview() {
-    this._previewEl.hidden = true;
-  }
-
   _friendlyError(error) {
+    if (error?.name === 'AbortError') return 'The plan took too long to load.';
     const message = String(error?.message || error);
     if (/WebGL|precision|context/i.test(message)) {
       return 'WebGL is not available in this browser. Enable hardware acceleration, or open the dashboard in a browser that supports WebGL.';
@@ -511,6 +524,6 @@ if (!window.customCards.some((card) => card.type === 'house-control-card')) {
   window.customCards.push({
     type: 'house-control-card',
     name: 'House Control',
-    description: 'The 3D home, with Home Assistant entity states and ll-custom actions.',
+    description: 'The 3D home, with Home Assistant entity states and tap/hold/double actions.',
   });
 }

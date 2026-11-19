@@ -2,24 +2,25 @@ type: custom:house-control-card
 plan_url: /local/house-control/plan.json
 quality: low
 
-# Actions exist only under devices/rooms. There are no default/global actions.
-# Generate all of these from your plan with:
+# Actions exist under devices/rooms. There are no default actions; add tap_action.
+# Generate a starting config from your plan with:
 #   node scripts/plan-to-config.mjs path/to/plan.json > house-control-card.yaml
-
+#
+# "living.main" is the lamp's id in the plan; replace it with yours.
+# A tap toggles this lamp; hold/double still open the popup menu.
 devices:
   living.main:
     tap_action:
-      action: fire-dom-event
-      popup_menu:
-        entity_id: light.living_room_main
+      action: toggle
+      entity_id: light.bardi_9w_rgbww_bulb
     hold_action:
       action: fire-dom-event
       popup_menu:
-        entity_id: light.living_room_main
+        entity_id: light.bardi_9w_rgbww_bulb
     double_tap_action:
       action: fire-dom-event
       popup_menu:
-        entity_id: light.living_room_main
+        entity_id: light.bardi_9w_rgbww_bulb
 
   living.ac:
     tap_action:

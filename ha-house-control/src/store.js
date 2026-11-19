@@ -30,14 +30,16 @@ function lightState(cfg, hass) {
   };
 }
 
+const offAC = (plan) => ({
+  on: false, target: 24, mode: 'cool', fan: 'auto', swing: 'swing',
+  sleep: false, eco: false, roomTemp: Math.min((plan.outdoorTemp ?? 27) - 2, 27), idle: false,
+});
+
 function acState(cfg, hass, plan) {
   const fallbackTemp = Math.min((plan.outdoorTemp ?? 27) - 2, 27);
   const stateObj = hass?.states?.[entityOf(cfg)];
   if (!stateObj || stateObj.state === 'unavailable' || stateObj.state === 'unknown' || stateObj.state === 'off') {
-    return {
-      on: false, target: 24, mode: 'cool', fan: 'auto', swing: 'swing',
-      sleep: false, eco: false, roomTemp: fallbackTemp, idle: false,
-    };
+    return offAC(plan);
   }
   const a = stateObj.attributes || {};
   const target = Number.isFinite(a.temperature) ? a.temperature
@@ -63,24 +65,18 @@ function acState(cfg, hass, plan) {
 export function createHAStore(plan) {
   const listeners = new Set();
   const signatures = new Map();
-  const state = { lights: {}, acs: {}, scene: null };
+  const state = { lights: {}, acs: {} };
 
   for (const l of plan.lights) {
     state.lights[l.id] = { on: false, brightness: 0.8, temp: 3000, color: l.color || null };
   }
-  for (const a of plan.acs) {
-    state.acs[a.id] = {
-      on: false, target: 24, mode: 'cool', fan: 'auto', swing: 'swing',
-      sleep: false, eco: false, roomTemp: Math.min((plan.outdoorTemp ?? 27) - 2, 27), idle: false,
-    };
-  }
+  for (const a of plan.acs) state.acs[a.id] = offAC(plan);
 
   function emit(change) {
     for (const fn of listeners) fn(change);
   }
 
   function updateFromHass(hass) {
-    let any = false;
     for (const l of plan.lights) {
       const next = lightState(l, hass);
       const key = JSON.stringify(next);
@@ -88,7 +84,6 @@ export function createHAStore(plan) {
       signatures.set(l.id, key);
       Object.assign(state.lights[l.id], next);
       emit({ type: 'light', id: l.id });
-      any = true;
     }
     for (const a of plan.acs) {
       const next = acState(a, hass, plan);
@@ -97,15 +92,11 @@ export function createHAStore(plan) {
       signatures.set(a.id, key);
       Object.assign(state.acs[a.id], next);
       emit({ type: 'ac', id: a.id });
-      any = true;
     }
-    return any;
   }
 
   return {
     state,
-    config: plan,
-    entityOf,
     on(fn) { listeners.add(fn); return () => listeners.delete(fn); },
     updateFromHass,
   };

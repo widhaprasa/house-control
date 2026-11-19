@@ -1,7 +1,7 @@
 # House Control card
 
-A Home Assistant Lovelace card that shows the 3D home from the plan JSON and fires
-`fire-dom-event` actions when a lamp, AC or room is tapped.
+A Home Assistant Lovelace card that shows the 3D home from the plan JSON and runs the
+configured actions when a lamp, AC or room is tapped.
 
 The full specification is in [`../web/CARD.md`](../web/CARD.md).
 
@@ -48,7 +48,6 @@ rooms:
         room: living
 ```
 
-There are no global/default actions. A lamp, AC or room without an entry does nothing.
 
 ## Generate the card config from a plan
 
@@ -66,7 +65,7 @@ Options:
 
 - `--plan-url /local/house-control/plan.json` — the URL the card will fetch.
 - `--quality low|high` — defaults to `low`.
-- `--no-actions` — emit only the card header and plan URL.
+- `--no-actions` — emit only the card header (type, plan URL and quality), without actions.
 
 The generated config has per-device and per-room `tap_action` / `hold_action` /
 `double_tap_action` entries, all using `action: fire-dom-event` with a `popup_menu`
@@ -75,7 +74,46 @@ own listener. Lamps/ACs without an `entity_id` are skipped and listed on stderr.
 
 ## Actions
 
-Only `fire-dom-event` is supported. The card dispatches:
+Supported: `fire-dom-event`, `toggle`, `turn_on`, `turn_off`, `call-service`.
+
+There are no default actions. A lamp, AC or room without `tap_action` does nothing on
+tap. For a lamp that toggles, add:
+
+```yaml
+devices:
+  <plan-lamp-id>:
+    tap_action:
+      action: toggle
+      entity_id: light.bardi_9w_rgbww_bulb
+```
+
+Use `action: turn_on` for on-only (off → on; on does nothing).
+
+### Call a service
+
+```yaml
+devices:
+  living.main:
+    tap_action:
+      action: call-service
+      service: light.turn_on
+      data:
+        brightness_pct: 80
+        rgb_color: [255, 170, 90]
+      # Optional. Omit it to use the clicked lamp's plan entity_id.
+      target:
+        entity_id: light.bardi_9w_rgbww_bulb
+```
+
+- `service` is `domain.service`, e.g. `light.turn_on`, `climate.set_temperature`,
+  `script.turn_on`, `scene.turn_on`.
+- `data` is the service data (brightness, temperature, etc.).
+- `target` is optional. Without it the card uses the clicked device's plan `entity_id`
+  (or `entity_id` on the action itself).
+- Works for `tap_action`, `hold_action` and `double_tap_action`, and for rooms when you
+  give an explicit `target`.
+
+`fire-dom-event` dispatches:
 
 ```js
 new CustomEvent('ll-custom', {
@@ -85,7 +123,7 @@ new CustomEvent('ll-custom', {
 })
 ```
 
-No `entity_id` or target is added automatically. Add it yourself under your event key.
+For `fire-dom-event`, no `entity_id` or target is added automatically; add it yourself under your event key.
 
 Gestures: `tap_action`, `hold_action` (about 500 ms), `double_tap_action` (about 300 ms;
 the single tap waits for the double window). The 3D stage keeps the app's camera: drag to
@@ -99,6 +137,6 @@ npm run dev
 
 The dev page uses `dev/demo-plan.json` (a two-floor demo with rounded rooms), mock Home
 Assistant states, and logs `ll-custom` events at the bottom. Open `/?test` to run the
-self-check (canvas, floor switcher, tap/hold/double, floor change).
+self-check (canvas, floor switcher, tap/hold/double, direct actions, floor change).
 
 `plan.json` fields for lamps and ACs are `entity_id`; rooms have no entity.

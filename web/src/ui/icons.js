@@ -20,7 +20,7 @@ const ICONS = {
   palette: Palette, sparkles: Sparkles, close: X,
   shield: ShieldCheck, link: Link2, copy: Copy, chat: MessageSquareText, book: BookOpen, terminal: Terminal,
   rotate: RotateCcw, globe: Globe, laptop: Laptop, clock: Clock, box: Box, download: Download, undo: Undo2,
-  activity: Activity, key: KeyRound, external: ArrowUpRight, camera: Camera, stop: Square,
+  activity: Activity, key: KeyRound, external: ArrowUpRight, camera: Camera, stop: Square, square: Square,
   homeassistant: HouseWifi, phone: Smartphone, radar: Radar, ok: CircleCheck, alert: CircleAlert,
   next: ChevronRight, unlink: Unlink, spinner: LoaderCircle, bridge: Router, bulb: Lightbulb,
   list: List, trash: Trash2, fit: Scan, redo: Redo2, map: MapIcon, opening: DoorClosed, furniture: Armchair,

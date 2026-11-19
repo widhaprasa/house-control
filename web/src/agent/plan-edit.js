@@ -2,12 +2,13 @@
 // written on disk. Nothing here touches the page, so it runs (and is tested) under Node too.
 import { normalize, LIGHT_KINDS, FLOOR_KINDS, LINK_FIELDS, isLinked, levelsOf } from '../config.js';
 import { FURNITURE_TYPES, footprint } from '../three/furniture.js';
+import { pointInRoom, roomBounds, roomCorners, rectFromPoints, isSimplePolygon } from '../geometry.js';
 
 export const SCENE_ICONS = ['sun', 'sofa', 'film', 'moon', 'door', 'bed', 'tv', 'sparkles'];
 export const WALLS = ['north', 'south', 'east', 'west'];
 const FURNITURE_KEYS = ['type', 'pos', 'rot', 'width', 'height', 'depth', 'size', 'color', 'chairs', 'stools', 'upper', 'level'];
 const LIGHT_KEYS = ['id', 'name', 'room', 'type', 'pos', 'y', 'rot', 'length', 'capabilities', 'color'];
-const AC_KEYS = ['id', 'name', 'room', 'wall', 'pos', 'y', 'min', 'max'];
+const AC_KEYS = ['id', 'name', 'room', 'wall', 'pos', 'y', 'rot', 'min', 'max'];
 
 export class PlanEditError extends Error {}
 
@@ -65,11 +66,10 @@ function cleanFurniture(item, where) {
 }
 
 // The room at a point; on a home with floors, only a room on `level` (when given) counts.
-function roomAt(plan, [x, z], level) {
+function roomAt(plan, point, level) {
   const first = levelsOf(plan)[0].id;
   return (plan.rooms || []).find((r) => (level == null || (r.level ?? first) === level)
-    && x >= r.rect[0] - 0.01 && x <= r.rect[0] + r.rect[2] + 0.01
-    && z >= r.rect[1] - 0.01 && z <= r.rect[1] + r.rect[3] + 0.01);
+    && pointInRoom(r, point, 0.01));
 }
 
 // The floor something is on: its own "level", else the first floor.
@@ -87,6 +87,36 @@ function checkRect(rect, where) {
     fail(`${where}: "rect" must be [x, z, width, depth] in metres, at least 0.3 m each way`);
   }
   return rect.map(round);
+}
+
+// The corners of a diagonal room, in order.
+function checkPoints(points, where) {
+  if (!(Array.isArray(points) && points.length >= 3 && points.every(isPoint))) {
+    fail(`${where}: "points" must be three or more [x, z] corners`);
+  }
+  const out = points.map((p) => p.map(round));
+  const [w, d] = rectFromPoints(out).slice(2);
+  if (w <= 0.3 || d <= 0.3) fail(`${where}: "points" must enclose an area at least 0.3 m across`);
+  if (new Set(out.map((p) => p.join(','))).size < 3) fail(`${where}: "points" needs three different corners`);
+  if (!isSimplePolygon(out)) fail(`${where}: "points" crosses itself — give the corners in order`);
+  return out;
+}
+
+// One radius per corner, in metres. Omitted corners stay square.
+function checkRadii(radii, n, where) {
+  if (!Array.isArray(radii)) fail(`${where}: "radii" must be one number per corner`);
+  if (radii.length > n) fail(`${where}: "radii" has more entries than the room has corners (${n})`);
+  if (!radii.every((v) => isNum(v) && v >= 0)) fail(`${where}: "radii" must be zero or more metres`);
+  return Array.from({ length: n }, (_, i) => (radii[i] > 0 ? round(radii[i]) : 0));
+}
+
+// Keeps existing radii lined up when a room's corners change.
+function fitRadii(room) {
+  if (!Array.isArray(room.radii)) return;
+  const n = roomCorners(room).length;
+  const radii = Array.from({ length: n }, (_, i) => (isNum(room.radii[i]) && room.radii[i] > 0 ? room.radii[i] : 0));
+  if (radii.some((r) => r > 0)) room.radii = radii;
+  else delete room.radii;
 }
 
 /**
@@ -131,7 +161,18 @@ export function applyOperations(raw, operations) {
         if (typeof op.id !== 'string' || !/^[a-z0-9_.-]+$/i.test(op.id)) fail(`${where}: "id" must be a short word like "office"`);
         if (plan.rooms.some((r) => r.id === op.id)) fail(`${where}: a room "${op.id}" already exists`);
         if (op.floor != null && !FLOOR_KINDS.includes(op.floor)) fail(`${where}: "floor" must be one of ${FLOOR_KINDS.join(', ')}`);
-        const room = { id: op.id, name: String(op.name || op.id), rect: checkRect(op.rect, where), floor: op.floor || 'oak' };
+        const room = { id: op.id, name: String(op.name || op.id), floor: op.floor || 'oak' };
+        if (op.points != null) {
+          // A diagonal room; "rect" is its bounding box, so the iPhone app can still open it.
+          room.points = checkPoints(op.points, where);
+          room.rect = rectFromPoints(room.points);
+        } else {
+          room.rect = checkRect(op.rect, where);
+        }
+        if (op.radii != null) {
+          const radii = checkRadii(op.radii, roomCorners(room).length, where);
+          if (radii.some((r) => r > 0)) room.radii = radii;
+        }
         if (op.level != null) room.level = String(op.level);
         plan.rooms.push(room);
         changes.push(`added room ${op.name || op.id}`);
@@ -167,13 +208,41 @@ export function applyOperations(raw, operations) {
         if (op.rect != null) {
           // Furniture inside the room moves with it, so resizing from the far edge keeps it in place.
           const rect = checkRect(op.rect, where);
-          const [dx, dz] = [rect[0] - room.rect[0], rect[1] - room.rect[1]];
+          const before = roomBounds(room);
+          const [dx, dz] = [rect[0] - before[0], rect[1] - before[1]];
           if (op.moveContents !== false && (dx || dz)) {
             const inside = (p) => roomAt({ rooms: [room] }, p);
             for (const f of plan.furniture) if (sameLevel(plan, f, room) && inside(f.pos)) f.pos = [round(f.pos[0] + dx), round(f.pos[1] + dz)];
             for (const d of [...plan.lights, ...plan.acs]) if (d.room === room.id) d.pos = [round(d.pos[0] + dx), round(d.pos[1] + dz)];
           }
+          // A diagonal room keeps its shape as it grows or shrinks.
+          if (Array.isArray(room.points)) {
+            const sx = before[2] > 0.01 ? rect[2] / before[2] : 1;
+            const sz = before[3] > 0.01 ? rect[3] / before[3] : 1;
+            room.points = room.points.map(([x, z]) => [round(rect[0] + (x - before[0]) * sx), round(rect[1] + (z - before[1]) * sz)]);
+          }
           room.rect = rect;
+        }
+        // Give a room a diagonal outline, or square it again (keeping its bounding box).
+        if (op.points !== undefined) {
+          if (op.points === null) {
+            // Keep a new rect from this edit; otherwise derive one before the corners go.
+            if (!Array.isArray(room.rect) || !(room.rect[2] > 0 && room.rect[3] > 0)) room.rect = roomBounds(room);
+            delete room.points;
+            delete room.radii;
+          } else {
+            room.points = checkPoints(op.points, where);
+            room.rect = rectFromPoints(room.points);
+            fitRadii(room);
+          }
+        }
+        if (op.radii !== undefined) {
+          if (op.radii === null) delete room.radii;
+          else {
+            const radii = checkRadii(op.radii, roomCorners(room).length, where);
+            if (radii.some((r) => r > 0)) room.radii = radii;
+            else delete room.radii;
+          }
         }
         if (op.floor != null) {
           if (!FLOOR_KINDS.includes(op.floor)) fail(`${where}: "floor" must be one of ${FLOOR_KINDS.join(', ')}`);
@@ -228,8 +297,8 @@ export function applyOperations(raw, operations) {
         const type = op.type || 'door';
         if (!['door', 'window', 'open'].includes(type)) fail(`${where}: "type" must be door, window or open`);
         if (!isPoint(op.from) || !isPoint(op.to)) fail(`${where}: "from" and "to" must be [x, z] points on a wall`);
-        if (op.from[0] !== op.to[0] && op.from[1] !== op.to[1]) fail(`${where}: an opening must be horizontal or vertical`);
         const o = { type, from: op.from.map(round), to: op.to.map(round) };
+        if (Math.hypot(o.to[0] - o.from[0], o.to[1] - o.from[1]) <= 0.01) fail(`${where}: an opening must be at least 1 cm long`);
         if (op.level != null) o.level = String(op.level);
         if (type === 'window') { if (isNum(op.sill)) o.sill = op.sill; if (isNum(op.head)) o.head = op.head; }
         plan.openings.push(o);

@@ -325,11 +325,17 @@ Right-click the icon and choose **Edit Home…**
 </p>
 
 - Drag rooms to move them; drag the dots on a selected room's corners and sides to resize it. Edges snap to
-  the rooms around them (hold ⌥ not to), everything else to 5 cm.
-- Where two rooms touch, the wall between them appears by itself. Walls facing the camera are cut away.
-  **Split in two** divides a room and puts a door between the halves.
+  the rooms around them (hold ⌥ not to), everything else to 5 cm. Double-click a room (or press **Edit corners**)
+  to edit its corners one at a time: drag a dot to make the walls diagonal, double-click a wall to add a corner,
+  and press Delete to remove the selected one. **Add corner** does the same from the panel.
+- Tap a corner in corner mode to select it, then set its **Corner radius**. Round one corner, tap the next, and
+  repeat. The dots stay at the room's real corners, so a rounded room is as easy to edit as a square one, and
+  **Rectangle** squares it again. Rounding all four corners of a square at half its wall makes it a circle.
+- Where two rooms touch, the wall between them appears by itself, also along a diagonal edge. Walls facing the
+  camera are cut away. **Split in two** divides a plain rectangular room and puts a door between the halves.
 - Add rooms, lamps, air conditioners, doors, windows, stairs and furniture from the bar under the plan.
-  Doors and windows slide along the walls and jump to the nearest one; drag their ends to make them wider.
+  Doors and windows slide along the walls — diagonal ones too — and jump to the nearest one; drag their ends to
+  make them wider.
 - Scroll to move around, pinch or ⌘-scroll to zoom. ⌘D duplicates, R turns, ⌘Z undoes.
 - **Save & apply** writes the plan and reloads the panel.
 
@@ -491,7 +497,10 @@ signed and notarized image locally instead; the script lists what it needs.
 
 - The iPhone app is not on the App Store yet (it is on TestFlight for the author's testers).
 - The Mac and the iPhone sync only while both are on the same network; there is no cloud in between.
-- Rooms are axis-aligned rectangles. An L-shaped room is two rooms.
+- Rooms can be rectangles or free outlines with any corner rounded on its own. A self-crossing outline is refused.
+  Very intricate concave outlines are best split into a few rooms. A rounded corner is drawn as a short curved
+  stretch, so a door or window on it still needs a straight wall: a shape change that would leave one hanging is
+  refused, and doors and windows go on the other walls.
 - Apple Home devices are switched by the iPhone app only: macOS gives HomeKit to App Store apps only.
 - Smart Life devices are reached through Tuya's cloud, not over the local network, so they need an internet
   connection (Home Assistant and Hue work on your network alone).

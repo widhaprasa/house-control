@@ -6,6 +6,11 @@ import './editor.css';
 import { normalize, loadRawConfig, LIGHT_KINDS, FLOOR_KINDS, isLinked, levelsOf } from '../config.js';
 import { createWorld } from '../three/world.js';
 import { FURNITURE_TYPES, footprint } from '../three/furniture.js';
+import {
+  isPolygon, roomCorners, roomRadii, hasRounding, roomBounds, roomCenter, roomLabelPoint, roomPoints,
+  pointInRoom, pointOnOutline, distanceToSegment, resizeRoom, translateRoom, setRoomPoints, makeRectangular, rectFromPoints,
+  polygonArea, cornerArc, maxCornerRadius, cornerRadiusFromPoint, setCornerRadius, isSimplePolygon,
+} from '../geometry.js';
 import { h, clamp } from '../ui/dom.js';
 import { icon } from '../ui/icons.js';
 import { isNative, isPhone, call, post, haptic, incoming } from '../bridge.js';
@@ -26,6 +31,7 @@ const WALLS = ['north', 'east', 'south', 'west'];
 const LEVEL_NAMES = ['Ground floor', 'First floor', 'Second floor', 'Third floor', 'Fourth floor', 'Fifth floor'];
 const HANDLES = { nw: [0, 0], n: [0.5, 0], ne: [1, 0], e: [1, 0.5], se: [1, 1], s: [0.5, 1], sw: [0, 1], w: [0, 0.5] };
 const MIN_ROOM = 0.6; // metres, either way
+const MAX_CORNERS = 64; // most corners a room may have, so its outline stays easy to edit
 const SCENE_ICONS = ['sun', 'sofa', 'film', 'moon', 'door', 'table', 'bed', 'tv', 'power', 'sparkles'];
 const REGIONS = [
   ['eu', 'Central Europe'], ['eu-w', 'Western Europe'], ['us', 'Western America'], ['us-e', 'Eastern America'],
@@ -52,6 +58,8 @@ export async function bootEditor(root) {
   let previewLights = true;
   let level = levelsOf(doc)[0].id; // the floor being edited
   let view = null; // the part of the plan on show, a box in metres, or null to fit the floor
+  let cornerMode = false; // editing the selected room's corners, not resizing it
+  let activeCorner = null; // the corner tapped in corner mode, or null
   const undo = [];
   const redo = [];
   const tuya = {
@@ -123,6 +131,8 @@ export async function bootEditor(root) {
     if (!from.length) return;
     to.push(JSON.stringify(doc));
     doc = JSON.parse(from.pop());
+    cornerMode = false; // the outline may have changed shape
+    activeCorner = null;
     lastSnapshotKey = null;
     checkLevel();
     if (sel.index != null && !doc[KEYS[sel.kind]]?.[sel.index]) sel = { kind: 'home' };
@@ -146,6 +156,8 @@ export async function bootEditor(root) {
     const on = item && levelOf(next.kind, item);
     if (on && on !== level) { level = on; view = null; world?.setLevel(level); }
     sel = next;
+    cornerMode = false; // corners are edited again for each thing
+    activeCorner = null;
     lastSnapshotKey = null;
     renderSidebar();
     renderPlan();
@@ -183,8 +195,8 @@ export async function bootEditor(root) {
     return i > 0 ? list[i - 1] : null;
   }
   const outline = (rooms) => rooms.length && {
-    minX: Math.min(...rooms.map((r) => r.rect[0])), minZ: Math.min(...rooms.map((r) => r.rect[1])),
-    maxX: Math.max(...rooms.map((r) => r.rect[0] + r.rect[2])), maxZ: Math.max(...rooms.map((r) => r.rect[1] + r.rect[3])),
+    minX: Math.min(...rooms.map((r) => roomBounds(r)[0])), minZ: Math.min(...rooms.map((r) => roomBounds(r)[1])),
+    maxX: Math.max(...rooms.map((r) => roomBounds(r)[0] + roomBounds(r)[2])), maxZ: Math.max(...rooms.map((r) => roomBounds(r)[1] + roomBounds(r)[3])),
   };
 
   function checkLevel() {
@@ -194,6 +206,8 @@ export async function bootEditor(root) {
   function setLevel(id) {
     if (id === level || !levelList().some((l) => l.id === id)) return;
     level = id;
+    cornerMode = false;
+    activeCorner = null;
     view = null;
     const item = sel.index != null ? doc[KEYS[sel.kind]]?.[sel.index] : null;
     if (item && !here(sel.kind, item)) sel = { kind: 'home' };
@@ -256,6 +270,8 @@ export async function bootEditor(root) {
     if (doc.levels.length === 1) unpinLevels();
     checkLevel();
     sel = { kind: 'home' };
+    cornerMode = false;
+    activeCorner = null;
     view = null;
     touch();
     toast(`${name} removed · ${isPhone ? 'Undo' : '⌘Z'} brings it back`);
@@ -275,13 +291,7 @@ export async function bootEditor(root) {
   // An opening on a wall only one room of the floor has (an outside wall).
   function outside(o, rooms) {
     const mid = [(o.from[0] + o.to[0]) / 2, (o.from[1] + o.to[1]) / 2];
-    const on = (r) => {
-      const [x, z, w, d] = r.rect;
-      const inX = mid[0] >= x - 1e-3 && mid[0] <= x + w + 1e-3;
-      const inZ = mid[1] >= z - 1e-3 && mid[1] <= z + d + 1e-3;
-      return inX && inZ && (Math.abs(mid[0] - x) < 1e-3 || Math.abs(mid[0] - x - w) < 1e-3
-        || Math.abs(mid[1] - z) < 1e-3 || Math.abs(mid[1] - z - d) < 1e-3);
-    };
+    const on = (r) => pointOnOutline(r, mid, 0.01);
     return rooms.filter(on).length < 2;
   }
 
@@ -293,7 +303,11 @@ export async function bootEditor(root) {
     pinLevels();
     const rooms = levelRooms(from.id);
     for (const r of rooms) {
-      doc.rooms.push({ id: uniqueId(`${r.id}.${id}`.replace(/[^a-z0-9.]+/gi, '')), name: r.name, rect: [...r.rect], floor: r.floor, level: id });
+      doc.rooms.push({
+        id: uniqueId(`${r.id}.${id}`.replace(/[^a-z0-9.]+/gi, '')), name: r.name, rect: [...roomBounds(r)], floor: r.floor, level: id,
+        ...(r.points ? { points: r.points.map((p) => [...p]) } : {}),
+        ...(hasRounding(r) ? { radii: roomRadii(r) } : {}),
+      });
     }
     for (const o of doc.openings.filter((x) => x.level === from.id)) {
       if (o.type === 'door' && outside(o, rooms)) continue; // the front door stays downstairs
@@ -314,6 +328,8 @@ export async function bootEditor(root) {
       ...(Array.isArray(doc.levels) ? { level: id } : {}),
     });
     sel = { kind: 'room', index: doc.rooms.length - 1 };
+    cornerMode = false;
+    activeCorner = null;
     view = null;
     touch();
   }
@@ -488,7 +504,12 @@ export async function bootEditor(root) {
   /* ---------- sidebar ---------- */
 
   function rowLabel(kind, item) {
-    if (kind === 'room') return [item.name || item.id, `${fix(item.rect[2])} × ${fix(item.rect[3])} m`];
+    if (kind === 'room') {
+      const [, , w, d] = roomBounds(item);
+      const corners = roomCorners(item).length;
+      if (isPolygon(item)) return [item.name || item.id, `${corners} corners${hasRounding(item) ? ' · rounded' : ''} · ${fix(w)} × ${fix(d)} m`];
+      return [item.name || item.id, `${hasRounding(item) ? 'rounded · ' : ''}${fix(w)} × ${fix(d)} m`];
+    }
     if (kind === 'light') return [item.name || item.id, `${roomName(item.room)} · ${item.type}`];
     if (kind === 'ac') return [item.name || item.id, `${roomName(item.room)} · ${item.wall} wall`];
     if (kind === 'furniture') return [item.type, roomName(roomAt(item.pos)?.id) || '—'];
@@ -498,7 +519,7 @@ export async function bootEditor(root) {
   }
 
   const roomName = (id) => doc.rooms.find((r) => r.id === id)?.name || id || '';
-  const roomAt = ([x, z]) => levelRooms().find((r) => x >= r.rect[0] && x <= r.rect[0] + r.rect[2] && z >= r.rect[1] && z <= r.rect[1] + r.rect[3]);
+  const roomAt = ([x, z]) => levelRooms().find((r) => pointInRoom(r, [x, z]));
 
   function renderSidebar() {
     const nodes = [h(`button.row.home-row${sel.kind === 'home' ? '.active' : ''}`, { onclick: () => select({ kind: 'home' }) },
@@ -549,30 +570,41 @@ export async function bootEditor(root) {
     const rooms = levelRooms();
     const picked = sel.index != null ? doc[KEYS[sel.kind]]?.[sel.index] : null;
     const room = (sel.kind === 'room' && picked) || (picked?.room && rooms.find((r) => r.id === picked.room)) || rooms[0];
-    const center = room ? [fix(room.rect[0] + room.rect[2] / 2), fix(room.rect[1] + room.rect[3] / 2)] : [1, 1];
+    const center = room ? roomCenter(room).map((v) => fix(v)) : [1, 1];
     const list = doc[KEYS[kind]];
     if (kind === 'room') {
-      const maxX = Math.max(0, ...rooms.map((r) => r.rect[0] + r.rect[2]));
-      const minZ = Math.min(...rooms.map((r) => r.rect[1]), 0);
+      const maxX = Math.max(0, ...rooms.map((r) => { const b = roomBounds(r); return b[0] + b[2]; }));
+      const minZ = Math.min(...rooms.map((r) => roomBounds(r)[1]), 0);
       list.push(stamp({ id: uniqueId('room'), name: 'New room', rect: [fix(maxX), fix(rooms.length ? minZ : 0), 3, 3], floor: 'oak' }));
     } else if (kind === 'light') {
       if (!room) return toast('Add a room first', true);
       list.push({ id: uniqueId(`${room.id}.light`), name: 'New light', room: room.id, type: 'ceiling', pos: freeSpot(room, center), capabilities: [] });
     } else if (kind === 'ac') {
       if (!room) return toast('Add a room first', true);
-      list.push({ id: uniqueId(`${room.id}.ac`), name: `${room.name} AC`, room: room.id, wall: 'north', pos: [center[0], room.rect[1]], y: 2.2 });
+      const ac = { id: uniqueId(`${room.id}.ac`), name: `${room.name} AC`, room: room.id, wall: 'north', pos: [...center], y: 2.2 };
+      snapAC(ac, [center[0], roomBounds(room)[1]], room);
+      list.push(ac);
     } else if (kind === 'furniture') {
       list.push(stamp(type === 'stairs' ? { type, pos: center, rot: 0, width: 1, depth: 2.8 } : { type: type || 'sofa', pos: center, rot: 0 }));
     } else if (kind === 'opening') {
       if (!room) return toast('Add a room first', true);
       // A door on the near (south) wall; a window on the far (north) one, where the 3D model shows it.
-      const half = type === 'window' ? 0.6 : 0.45;
-      const z = type === 'window' ? room.rect[1] : room.rect[1] + room.rect[3];
-      list.push(stamp({ type: type || 'door', from: [fix(center[0] - half), fix(z)], to: [fix(center[0] + half), fix(z)] }));
+      const len = type === 'window' ? 1.2 : 0.9;
+      const [, rz, , rd] = roomBounds(room);
+      const z = type === 'window' ? rz : rz + rd;
+      const o = stamp({ type: type || 'door', from: [fix(center[0] - len / 2), fix(z)], to: [fix(center[0] + len / 2), fix(z)] });
+      // On a diagonal room the nearest wall may well be a slanted one; put it there.
+      if (!placeOpening(o, [center[0], z], len, [room])) {
+        toast('This room has no wall long enough for that — make it a little bigger', true);
+        return;
+      }
+      list.push(o);
     } else if (kind === 'scene') {
       list.push({ id: uniqueId('scene'), name: 'New scene', icon: 'sparkles', lights: { '*': { on: false } } });
     }
     sel = { kind, index: list.length - 1 };
+    cornerMode = false;
+    activeCorner = null;
     if (view && !inView(list[list.length - 1])) view = null;
     touch();
     if (isPhone) phone.selected(sel);
@@ -580,7 +612,7 @@ export async function bootEditor(root) {
 
   // Whether an item's middle is in the part of the plan on show.
   function inView(item) {
-    const p = item.pos || item.from || (item.rect && [item.rect[0] + item.rect[2] / 2, item.rect[1] + item.rect[3] / 2]);
+    const p = item.pos || item.from || (item.rect && roomCenter(item));
     if (!p || !view) return true;
     return p[0] > view.x && p[0] < view.x + view.w && p[1] > view.y && p[1] < view.y + view.h;
   }
@@ -595,28 +627,37 @@ export async function bootEditor(root) {
     if (kind === 'room') {
       copy.id = uniqueId(item.id);
       copy.name = `${item.name || item.id} 2`;
-      copy.rect[0] = fix(item.rect[0] + item.rect[2]);
+      translateRoom(copy, roomBounds(item)[2], 0);
     } else if (kind === 'light' || kind === 'ac') {
       copy.id = uniqueId(item.id);
       for (const key of ['tuya', 'link', 'sensor']) delete copy[key];
       if (kind === 'ac') {
-        const along = item.wall === 'north' || item.wall === 'south' ? 0 : 1;
-        copy.pos[along] = fix(copy.pos[along] + 1.1);
+        // Slide the copy along the wall: by its own angle on a diagonal or round wall.
+        if (Number.isFinite(item.rot)) {
+          const a = (item.rot * Math.PI) / 180;
+          copy.pos = [fix(copy.pos[0] + Math.cos(a) * 1.1), fix(copy.pos[1] - Math.sin(a) * 1.1)];
+        } else {
+          const along = item.wall === 'north' || item.wall === 'south' ? 0 : 1;
+          copy.pos[along] = fix(copy.pos[along] + 1.1);
+        }
       } else copy.pos = [fix(item.pos[0] + 0.5), fix(item.pos[1])];
     } else if (kind === 'furniture') {
       copy.pos = [fix(item.pos[0] + 0.4), fix(item.pos[1] + 0.4)];
     } else if (kind === 'opening') {
-      const alongX = item.from[1] === item.to[1];
-      const len = Math.abs(alongX ? item.to[0] - item.from[0] : item.to[1] - item.from[1]) + 0.3;
-      const k = alongX ? 0 : 1;
-      copy.from[k] = fix(copy.from[k] + len);
-      copy.to[k] = fix(copy.to[k] + len);
+      // The copy shifts along the wall it is on, whichever way that wall runs.
+      const chord = Math.hypot(item.to[0] - item.from[0], item.to[1] - item.from[1]);
+      const u = chord > 1e-6 ? [(item.to[0] - item.from[0]) / chord, (item.to[1] - item.from[1]) / chord] : [1, 0];
+      const shift = chord + 0.3;
+      copy.from = [fix(copy.from[0] + u[0] * shift), fix(copy.from[1] + u[1] * shift)];
+      copy.to = [fix(copy.to[0] + u[0] * shift), fix(copy.to[1] + u[1] * shift)];
     } else if (kind === 'scene') {
       copy.id = uniqueId(item.id);
       copy.name = `${item.name || item.id} copy`;
     }
     doc[KEYS[kind]].push(copy);
     sel = { kind, index: doc[KEYS[kind]].length - 1 };
+    cornerMode = false;
+    activeCorner = null;
     touch();
     toast('Duplicated');
   }
@@ -630,11 +671,154 @@ export async function bootEditor(root) {
     touch();
   }
 
-  // Splits a room across its longer side, with a door between the two halves.
+  // Room shapes. A room is a rectangle or a free outline ("points"), and any corner may be
+  // rounded with its own radius ("radii"). Corner mode edits those points; room mode resizes.
+  function enterCorners(index) {
+    const room = doc.rooms[index];
+    if (!room) return;
+    cornerMode = true;
+    activeCorner = null;
+    renderPlan();
+    renderInspector();
+  }
+
+  function exitCorners() {
+    cornerMode = false;
+    activeCorner = null;
+    renderPlan();
+    renderInspector();
+  }
+
+  // A tap on a corner while editing corners selects it, or drops it again.
+  function toggleCorner(index, vertex) {
+    const room = doc.rooms[index];
+    if (!room || vertex == null) return;
+    const n = roomCorners(room).length;
+    if (vertex < 0 || vertex >= n) return;
+    cornerMode = true;
+    activeCorner = activeCorner === vertex ? null : vertex;
+    haptic('light');
+    renderPlan();
+    renderInspector();
+  }
+
+  // A shape change may not leave a door or window hanging off a wall.
+  function floatsOpening(room, after) {
+    return doc.openings.some((o) => here('opening', o)
+      && pointOnOutline(room, o.from, 0.03) && pointOnOutline(room, o.to, 0.03)
+      && (!pointOnOutline(after, o.from, 0.03) || !pointOnOutline(after, o.to, 0.03)));
+  }
+
+  // The shape a room would have with these corners and radii, for checking an edit first.
+  const shapeAfter = (room, points, radii) => ({ ...room, points, radii, rect: rectFromPoints(points) });
+
+  function shapeAllowed(room, points, radii) {
+    if (!floatsOpening(room, shapeAfter(room, points, radii))) return true;
+    toast('A door or window is on that wall — move or remove it first', true);
+    return false;
+  }
+
+  // Whether a corner radius keeps every opening on a wall.
+  function radiusAllowed(room, index, radius) {
+    const points = roomCorners(room);
+    const radii = roomRadii(room, points.length);
+    radii[index] = radius;
+    return !floatsOpening(room, shapeAfter(room, points, radii));
+  }
+
+  function makeRoomRect(index) {
+    const room = doc.rooms[index];
+    if (!room) return;
+    const b = roomBounds(room);
+    const after = { ...room, rect: [fix(b[0]), fix(b[1]), fix(b[2]), fix(b[3])] };
+    delete after.points;
+    delete after.radii;
+    if (floatsOpening(room, after)) {
+      toast('A door or window is on that wall — move or remove it first', true);
+      return;
+    }
+    snapshot();
+    makeRectangular(room);
+    room.rect = after.rect;
+    activeCorner = null;
+    touch();
+  }
+
+  // Adds a corner on the room's wall: under the pointer when `at` is given (a double-click),
+  // else halfway along the longest wall. The new corner is selected, ready to be dragged.
+  function addRoomPoint(index, at) {
+    const room = doc.rooms[index];
+    if (!room) return;
+    const pts = roomCorners(room).map(([x, z]) => [fix(x), fix(z)]);
+    const radii = roomRadii(room, pts.length);
+    if (pts.length >= MAX_CORNERS) { toast('This room already has plenty of corners', true); return; }
+    let edge = 0;
+    let along = 0.5;
+    let best = at ? Infinity : -1;
+    for (let i = 0; i < pts.length; i++) {
+      const a = pts[i];
+      const b = pts[(i + 1) % pts.length];
+      const dx = b[0] - a[0];
+      const dz = b[1] - a[1];
+      const len2 = dx * dx + dz * dz;
+      if (len2 < 1e-9) continue;
+      const t = at ? clamp(((at[0] - a[0]) * dx + (at[1] - a[1]) * dz) / len2, 0.1, 0.9) : 0.5;
+      const q = [a[0] + dx * t, a[1] + dz * t];
+      const score = at ? Math.hypot(at[0] - q[0], at[1] - q[1]) : len2;
+      if ((at && score < best) || (!at && score > best)) { best = score; edge = i; along = t; }
+    }
+    snapshot();
+    const a = pts[edge];
+    const b = pts[(edge + 1) % pts.length];
+    const q = [fix(a[0] + (b[0] - a[0]) * along), fix(a[1] + (b[1] - a[1]) * along)];
+    pts.splice(edge + 1, 0, q);
+    radii.splice(edge + 1, 0, 0);
+    setRoomPoints(room, pts, radii);
+    cornerMode = true;
+    activeCorner = edge + 1;
+    touch();
+    toast('Corner added — drag its dot to shape the room');
+  }
+
+  // Removes the selected corner, keeping at least three (so the room still encloses an area).
+  function deleteCorner(index) {
+    const room = doc.rooms[index];
+    if (!room) return;
+    if (activeCorner == null) { toast('Tap the corner to remove first', true); return; }
+    const pts = roomCorners(room).map(([x, z]) => [fix(x), fix(z)]);
+    if (pts.length <= 3) { toast('A room needs at least three corners', true); return; }
+    const radii = roomRadii(room, pts.length);
+    pts.splice(activeCorner, 1);
+    radii.splice(activeCorner, 1);
+    if (!isSimplePolygon(pts)) { toast('That would fold the room over itself', true); return; }
+    if (!shapeAllowed(room, pts, radii)) return;
+    snapshot();
+    setRoomPoints(room, pts, radii);
+    activeCorner = null;
+    touch();
+  }
+
+  // Moves the selected corner to a point, refusing folds, slivers and detached openings.
+  function moveCorner(room, index, point) {
+    const pts = roomCorners(room).map(([x, z]) => [fix(x), fix(z)]);
+    const radii = roomRadii(room, pts.length);
+    pts[index] = [fix(point[0]), fix(point[1])];
+    const [w, d] = rectFromPoints(pts).slice(2);
+    if (w < MIN_ROOM || d < MIN_ROOM || !isSimplePolygon(pts)) return false;
+    if (floatsOpening(room, shapeAfter(room, pts, radii))) return false;
+    setRoomPoints(room, pts, radii);
+    return true;
+  }
+
+  // Splits a rectangular room across its longer side, with a door between the two halves.
   function splitRoom(index) {
     const room = doc.rooms[index];
     if (!room) return;
-    const [x, z, w, d] = room.rect;
+    if (isPolygon(room) || hasRounding(room)) {
+      toast('Only plain rectangular rooms split in two — press “Rectangle” first', true);
+      return;
+    }
+    const [x, z, w, d] = roomBounds(room);
     if (Math.max(w, d) < MIN_ROOM * 2) { toast('Too small to split', true); return; }
     snapshot();
     const across = w >= d;
@@ -656,6 +840,8 @@ export async function bootEditor(root) {
     const door = across ? { from: [mid[0], fix(mid[1] - 0.45)], to: [mid[0], fix(mid[1] + 0.45)] } : { from: [fix(mid[0] - 0.45), mid[1]], to: [fix(mid[0] + 0.45), mid[1]] };
     doc.openings.push(stamp({ type: 'door', ...door, ...(room.level ? { level: room.level } : {}) }));
     sel = { kind: 'room', index: doc.rooms.length - 1 };
+    cornerMode = false;
+    activeCorner = null;
     touch();
     toast('Split in two, with a door between');
   }
@@ -665,8 +851,7 @@ export async function bootEditor(root) {
     const room = doc.rooms[index];
     if (!room || id === (room.level ?? firstLevel())) return;
     pinLevels();
-    const [x, z, w, d] = room.rect;
-    const inside = ([px, pz]) => px >= x - 1e-6 && px <= x + w + 1e-6 && pz >= z - 1e-6 && pz <= z + d + 1e-6;
+    const inside = (p) => pointInRoom(room, p, 0.01);
     for (const f of doc.furniture) if (f.level === room.level && Array.isArray(f.pos) && inside(f.pos)) f.level = id;
     for (const o of doc.openings) if (o.level === room.level && inside(o.from) && inside(o.to)) o.level = id;
     room.level = id;
@@ -677,13 +862,12 @@ export async function bootEditor(root) {
 
   // The middle of the room, or the nearest place around it no other lamp stands on.
   function freeSpot(room, center) {
-    const [x, z, w, d] = room.rect;
     const taken = (p) => doc.lights.some((l) => here('light', l) && Math.hypot(l.pos[0] - p[0], l.pos[1] - p[1]) < 0.45);
     for (let ring = 0; ring < 4; ring++) {
       for (let k = 0; k < Math.max(1, ring * 6); k++) {
         const a = (k / Math.max(1, ring * 6)) * Math.PI * 2;
         const p = [fix(round(center[0] + Math.cos(a) * ring * 0.6)), fix(round(center[1] + Math.sin(a) * ring * 0.6))];
-        if (p[0] > x + 0.2 && p[0] < x + w - 0.2 && p[1] > z + 0.2 && p[1] < z + d - 0.2 && !taken(p)) return p;
+        if (pointInRoom(room, p, -0.2) && !taken(p)) return p;
       }
     }
     return center;
@@ -695,6 +879,8 @@ export async function bootEditor(root) {
     if (kind === 'room') dropRooms(new Set([gone.id]));
     else if (kind === 'light' || kind === 'ac') forgetDevices();
     sel = { kind: 'home' };
+    cornerMode = false;
+    activeCorner = null;
     touch();
   }
 
@@ -718,6 +904,15 @@ export async function bootEditor(root) {
 
   const isSel = (kind, index) => sel.kind === kind && sel.index === index;
   const svText = (attrs, value) => sv('text', attrs, document.createTextNode(value));
+
+  // A room's outline on the plan: a rectangle, or a polygon (which also draws the arcs).
+  function roomShape(room, attrs) {
+    const [x, z, w, d] = roomBounds(room);
+    if (isPolygon(room) || hasRounding(room)) {
+      return sv('polygon', { points: roomPoints(room).map(([px, pz]) => `${fix(px)},${fix(pz)}`).join(' '), ...attrs });
+    }
+    return sv('rect', { x, y: z, width: w, height: d, ...attrs });
+  }
 
   // A flight of stairs on the plan: its treads, and an arrow up from where you step on.
   function stairsMarks(w, d, cls) {
@@ -749,8 +944,8 @@ export async function bootEditor(root) {
     if (under) {
       const ghost = sv('g', { class: 'p-ghost' });
       for (const r of levelRooms(under.id)) {
-        const [x, z, w, d] = r.rect;
-        ghost.append(sv('rect', { x, y: z, width: w, height: d }), svText({ x: x + w / 2, y: z + d / 2, class: 'p-ghost-label' }, r.name || r.id));
+        const [lx, lz] = roomLabelPoint(r);
+        ghost.append(roomShape(r), svText({ x: fix(lx), y: fix(lz), class: 'p-ghost-label' }, r.name || r.id));
       }
       kids.push(ghost);
       // The stairs coming up from below show over this floor's rooms: that is where the landing goes.
@@ -764,11 +959,13 @@ export async function bootEditor(root) {
 
     doc.rooms.forEach((r, i) => {
       if (!here('room', r)) return;
-      const [x, z, w, d] = r.rect;
-      kids.push(sv('g', { class: `p-room${isSel('room', i) ? ' sel' : ''}`, 'data-kind': 'room', 'data-index': i },
-        sv('rect', { x, y: z, width: w, height: d, fill: FLOOR_FILL[r.floor] || FLOOR_FILL.oak }),
-        svText({ x: x + w / 2, y: z + d / 2 - 0.02, class: 'p-label' }, r.name || r.id),
-        svText({ x: x + w / 2, y: z + d / 2 + 0.3, class: 'p-dim' }, `${fix(w)} × ${fix(d)}`)));
+      const [, , w, d] = roomBounds(r);
+      const [lx, lz] = roomLabelPoint(r);
+      const poly = isPolygon(r) || hasRounding(r);
+      kids.push(sv('g', { class: `p-room${isSel('room', i) ? ' sel' : ''}${poly ? ' poly' : ''}`, 'data-kind': 'room', 'data-index': i },
+        roomShape(r, { fill: FLOOR_FILL[r.floor] || FLOOR_FILL.oak }),
+        svText({ x: fix(lx), y: fix(lz - 0.02), class: 'p-label' }, r.name || r.id),
+        svText({ x: fix(lx), y: fix(lz + 0.3), class: 'p-dim' }, `${fix(w)} × ${fix(d)}`)));
     });
 
     kids.push(ghostStairs);
@@ -789,16 +986,15 @@ export async function bootEditor(root) {
 
     doc.openings.forEach((o, i) => {
       if (!here('opening', o)) return;
-      if (big) kids.push(sv('line', { class: 'p-hit', 'data-kind': 'opening', 'data-index': i, x1: o.from[0], y1: o.from[1], x2: o.to[0], y2: o.to[1] }));
-      kids.push(sv('line', {
-        class: `p-open ${o.type || 'door'}${isSel('opening', i) ? ' sel' : ''}`, 'data-kind': 'opening', 'data-index': i,
-        x1: o.from[0], y1: o.from[1], x2: o.to[0], y2: o.to[1],
-      }));
+      const attrs = { 'data-kind': 'opening', 'data-index': i };
+      const openAttrs = { ...attrs, class: `p-open ${o.type || 'door'}${isSel('opening', i) ? ' sel' : ''}` };
+      if (big) kids.push(sv('line', { ...attrs, class: 'p-hit', x1: o.from[0], y1: o.from[1], x2: o.to[0], y2: o.to[1] }));
+      kids.push(sv('line', { ...openAttrs, x1: o.from[0], y1: o.from[1], x2: o.to[0], y2: o.to[1] }));
     });
 
     doc.acs.forEach((a, i) => {
       if (!here('ac', a)) return;
-      const rot = { north: 0, east: 90, south: 180, west: 270 }[a.wall] || 0;
+      const rot = Number.isFinite(a.rot) ? a.rot : ({ north: 0, east: 90, south: 180, west: 270 }[a.wall] || 0);
       kids.push(sv('g', {
         class: `p-ac${isSel('ac', i) ? ' sel' : ''}`, 'data-kind': 'ac', 'data-index': i,
         transform: `translate(${a.pos[0]} ${a.pos[1]}) rotate(${rot})`,
@@ -828,18 +1024,41 @@ export async function bootEditor(root) {
     const reach = pixels(big ? 22 : 9);
     const room = sel.kind === 'room' && doc.rooms[sel.index];
     if (room && here('room', room)) {
-      const [x, z, w, d] = room.rect;
-      for (const [name, [fx, fz]] of Object.entries(HANDLES)) {
-        const cx = x + w * fx;
-        const cz = z + d * fz;
-        const attrs = { 'data-kind': 'resize', 'data-index': sel.index, 'data-handle': name };
-        kids.push(sv('circle', { cx, cy: cz, r: reach, class: `hit grab ${name}`, ...attrs }),
-          sv('circle', { cx, cy: cz, r: name.length === 2 ? r : r * 0.8, class: `p-handle ${name}`, ...attrs }));
+      const [x, z, w, d] = roomBounds(room);
+      if (cornerMode) {
+        // Corner mode: one dot per corner. Drag to move it; tap to select it for its radius.
+        roomCorners(room).forEach(([cx, cz], vi) => {
+          const attrs = { 'data-kind': 'corner', 'data-index': sel.index, 'data-corner': vi };
+          kids.push(sv('circle', { cx, cy: cz, r: reach, class: 'hit grab vertex', ...attrs }),
+            sv('circle', { cx, cy: cz, r: r * 0.8, class: `p-handle vertex${activeCorner === vi ? ' picked' : ''}`, ...attrs }));
+        });
+        // The selected corner's radius grip, once it is round.
+        const corners = roomCorners(room);
+        const radii = roomRadii(room, corners.length);
+        if (activeCorner != null && radii[activeCorner] > 0 && corners.length >= 3) {
+          const sign = Math.sign(polygonArea(corners)) || 1;
+          const arc = cornerArc(corners[(activeCorner - 1 + corners.length) % corners.length], corners[activeCorner],
+            corners[(activeCorner + 1) % corners.length], radii[activeCorner], sign);
+          if (arc && arc.length) {
+            const [gx, gz] = arc[Math.floor(arc.length / 2)];
+            const attrs = { 'data-kind': 'radius', 'data-index': sel.index, 'data-corner': activeCorner };
+            kids.push(sv('circle', { cx: gx, cy: gz, r: reach, class: 'hit grab radius', ...attrs }),
+              sv('circle', { cx: gx, cy: gz, r: r * 0.72, class: 'p-handle radius', ...attrs }));
+          }
+        }
+      } else {
+        for (const [name, [fx, fz]] of Object.entries(HANDLES)) {
+          const cx = x + w * fx;
+          const cz = z + d * fz;
+          const attrs = { 'data-kind': 'resize', 'data-index': sel.index, 'data-handle': name };
+          kids.push(sv('circle', { cx, cy: cz, r: reach, class: `hit grab ${name}`, ...attrs }),
+            sv('circle', { cx, cy: cz, r: name.length === 2 ? r : r * 0.8, class: `p-handle ${name}`, ...attrs }));
+        }
       }
     }
     const open = sel.kind === 'opening' && doc.openings[sel.index];
     if (open && here('opening', open)) {
-      const alongX = open.from[1] === open.to[1];
+      const alongX = Math.abs(open.to[0] - open.from[0]) >= Math.abs(open.to[1] - open.from[1]);
       for (const end of ['from', 'to']) {
         const [cx, cz] = open[end];
         const attrs = { 'data-kind': 'oend', 'data-index': sel.index, 'data-handle': end };
@@ -865,62 +1084,104 @@ export async function bootEditor(root) {
     return [p.x, p.y];
   }
 
-  // Puts an AC on the nearest wall of the room under (or nearest to) the pointer.
-  function snapAC(ac, [x, z]) {
-    const room = roomAt([x, z]) || doc.rooms.find((r) => r.id === ac.room);
-    if (!room) return;
-    const [rx, rz, rw, rd] = room.rect;
-    const options = [
-      ['north', Math.abs(z - rz)], ['south', Math.abs(z - (rz + rd))],
-      ['west', Math.abs(x - rx)], ['east', Math.abs(x - (rx + rw))],
-    ].sort((p, q) => p[1] - q[1]);
-    const wall = options[0][0];
-    ac.room = room.id;
-    ac.wall = wall;
-    const cx = fix(clamp(round(x), rx + 0.6, rx + rw - 0.6));
-    const cz = fix(clamp(round(z), rz + 0.6, rz + rd - 0.6));
-    ac.pos = wall === 'north' ? [cx, rz] : wall === 'south' ? [cx, fix(rz + rd)] : wall === 'west' ? [rx, cz] : [fix(rx + rw), cz];
+  // How far a point is from the room's straight walls (the ones a new corner can split).
+  function wallDistance(room, point) {
+    const pts = roomCorners(room);
+    let best = Infinity;
+    for (let i = 0; i < pts.length; i++) {
+      best = Math.min(best, distanceToSegment(point, pts[i], pts[(i + 1) % pts.length]));
+    }
+    return best;
   }
 
-  // Every room edge on this floor: a wall running along `axis` at `c`, from `a` to `b`.
-  function walls() {
+  // The nearest point on a room's outline, and which way that wall faces.
+  function nearestWall(room, [x, z]) {
+    const pts = roomPoints(room);
+    let best = null;
+    for (let i = 0; i < pts.length; i++) {
+      const a = pts[i];
+      const b = pts[(i + 1) % pts.length];
+      const dx = b[0] - a[0];
+      const dz = b[1] - a[1];
+      const len2 = dx * dx + dz * dz;
+      if (len2 < 1e-9) continue;
+      const t = clamp(((x - a[0]) * dx + (z - a[1]) * dz) / len2, 0, 1);
+      const q = [a[0] + dx * t, a[1] + dz * t];
+      const d = Math.hypot(x - q[0], z - q[1]);
+      if (!best || d < best.d) {
+        const sign = 1 / Math.sqrt(len2);
+        const nx = dz * sign; // outward for a clockwise outline
+        const nz = -dx * sign;
+        const wall = Math.abs(nx) >= Math.abs(nz) ? (nx > 0 ? 'east' : 'west') : (nz > 0 ? 'south' : 'north');
+        best = { d, q, wall, normal: [nx, nz] };
+      }
+    }
+    return best;
+  }
+
+  // Puts an AC on the nearest wall of the room under (or nearest to) the pointer.
+  function snapAC(ac, point, room = roomAt(point) || doc.rooms.find((r) => r.id === ac.room)) {
+    if (!room) return;
+    const wall = nearestWall(room, point);
+    if (!wall) return;
+    ac.room = room.id;
+    ac.wall = wall.wall;
+    // A diagonal or round wall turns the unit to face into the room; an axis-aligned one
+    // keeps the four cardinal names the plan format (and the iPhone app) already knows.
+    const [nx, nz] = wall.normal;
+    const axis = Math.abs(nx) < 1e-6 || Math.abs(nz) < 1e-6;
+    const p = axis ? wall.q.map((v) => (fix(round(v)))) : wall.q.map((v) => fix(v));
+    ac.pos = [p[0], p[1]];
+    if (axis) delete ac.rot;
+    else ac.rot = fix(((Math.atan2(-nx, -nz) * 180 / Math.PI) % 360 + 360) % 360);
+  }
+
+  // Every wall of this floor (or of the rooms given), as a line from `a` to `b` (any angle).
+  function walls(rooms = levelRooms()) {
     const out = [];
-    for (const r of levelRooms()) {
-      const [x, z, w, d] = r.rect;
-      out.push({ axis: 'x', c: z, a: x, b: x + w }, { axis: 'x', c: z + d, a: x, b: x + w },
-        { axis: 'z', c: x, a: z, b: z + d }, { axis: 'z', c: x + w, a: z, b: z + d });
+    for (const r of rooms) {
+      const pts = roomPoints(r);
+      for (let i = 0; i < pts.length; i++) {
+        const a = pts[i];
+        const b = pts[(i + 1) % pts.length];
+        const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        if (len < 1e-3) continue;
+        out.push({ room: r, a, b, len, u: [(b[0] - a[0]) / len, (b[1] - a[1]) / len] });
+      }
     }
     return out;
   }
 
   // Lays a door or a window of length `len` on the wall nearest to the point, centred there.
-  function placeOpening(o, [px, pz], len) {
+  // Walls may run at any angle; a rounded corner is made of short straight pieces.
+  function placeOpening(o, [px, pz], len, rooms = levelRooms()) {
     let best = null;
-    for (const wall of walls()) {
-      if (wall.b - wall.a < len - 1e-6) continue;
-      const along = wall.axis === 'x' ? px : pz;
-      const across = wall.axis === 'x' ? pz : px;
-      const t = clamp(along, wall.a + len / 2, wall.b - len / 2);
-      const dist = Math.hypot(along - t, across - wall.c);
+    for (const wall of walls(rooms)) {
+      if (wall.len < len - 1e-6) continue;
+      const along = (px - wall.a[0]) * wall.u[0] + (pz - wall.a[1]) * wall.u[1];
+      const t = clamp(along, len / 2, wall.len - len / 2);
+      const q = [wall.a[0] + wall.u[0] * t, wall.a[1] + wall.u[1] * t];
+      const dist = Math.hypot(px - q[0], pz - q[1]);
       if (!best || dist < best.dist) best = { wall, t, dist };
     }
-    if (!best) return;
+    if (!best) return false;
+
     const { wall } = best;
-    const t = clamp(round(best.t), wall.a + len / 2, wall.b - len / 2);
-    const [a, b] = [fix(t - len / 2), fix(t + len / 2)];
-    const c = fix(wall.c);
-    if (wall.axis === 'x') { o.from = [a, c]; o.to = [b, c]; } else { o.from = [c, a]; o.to = [c, b]; }
+    const t = clamp(round(best.t), len / 2, wall.len - len / 2);
+    const [a, b] = [t - len / 2, t + len / 2];
+    o.from = [fix(wall.a[0] + wall.u[0] * a), fix(wall.a[1] + wall.u[1] * a)];
+    o.to = [fix(wall.a[0] + wall.u[0] * b), fix(wall.a[1] + wall.u[1] * b)];
+    return true;
   }
 
-  // The room edges (on this floor, and the one under it) a moving edge can snap to.
+  // The room corners (on this floor, and the one under it) a moving edge can snap to.
   function edgeLines(skip) {
     const xs = [];
     const zs = [];
     const rooms = [...levelRooms(), ...(below() ? levelRooms(below().id) : [])];
     for (const r of rooms) {
       if (r === skip) continue;
-      xs.push(r.rect[0], r.rect[0] + r.rect[2]);
-      zs.push(r.rect[1], r.rect[1] + r.rect[3]);
+      for (const [x, z] of roomPoints(r)) { xs.push(x); zs.push(z); }
     }
     return { xs, zs };
   }
@@ -957,7 +1218,29 @@ export async function bootEditor(root) {
   function startDrag(kind, index, ev, handle) {
     const start = planPoint(ev);
     if (kind === 'resize') {
-      drag = { kind, index, start, handle, rect: [...doc.rooms[index].rect] };
+      const room = doc.rooms[index];
+      const inside = (p) => pointInRoom(room, p, 0.01);
+      drag = {
+        kind, index, start, handle, rect: roomBounds(room), points: room.points?.map((p) => [...p]) || null,
+        openings: doc.openings.filter((o) => here('opening', o) && inside(o.from) && inside(o.to))
+          .map((o) => ({ o, from: [...o.from], to: [...o.to] })),
+      };
+      return;
+    }
+    if (kind === 'corner') {
+      const room = doc.rooms[index];
+      drag = {
+        kind, index, start, corner: Number(ev.target.dataset.corner), moved: false, blocked: null,
+        points: roomCorners(room).map((p) => [...p]), radii: roomRadii(room), lines: edgeLines(room),
+      };
+      return;
+    }
+    if (kind === 'radius') {
+      const room = doc.rooms[index];
+      drag = {
+        kind, index, start, corner: Number(ev.target.dataset.corner), moved: false, blocked: null,
+        points: roomCorners(room).map((p) => [...p]), radii: roomRadii(room),
+      };
       return;
     }
     if (kind === 'oend') {
@@ -969,9 +1252,9 @@ export async function bootEditor(root) {
     const item = doc[KEYS[kind]][index];
     drag = { kind, index, start, moved: false };
     if (kind === 'room') {
-      const [x, z, w, d] = item.rect;
-      const inside = ([px, pz]) => px >= x - 1e-6 && px <= x + w + 1e-6 && pz >= z - 1e-6 && pz <= z + d + 1e-6;
-      drag.rect = [...item.rect];
+      const inside = (p) => pointInRoom(item, p, 0.01);
+      drag.rect = roomBounds(item);
+      drag.points = item.points?.map((p) => [...p]) || null;
       // Everything standing in the room travels with it.
       drag.riders = [
         ...doc.lights.filter((l) => l.room === item.id).map((o) => ({ o, pos: [...o.pos] })),
@@ -1003,6 +1286,39 @@ export async function bootEditor(root) {
     moveDrag(ev);
   });
 
+  // Grows or shrinks a room from one bounding box to another, taking its openings with it.
+  function resizeRoomWithOpenings(item, rect) {
+    const before = roomBounds(item);
+    const openings = doc.openings.filter((o) => here('opening', o)
+      && pointInRoom(item, o.from, 0.01) && pointInRoom(item, o.to, 0.01));
+    resizeRoom(item, rect);
+    const [ox, oz, ow, od] = before;
+    const [nx, nz, nw, nd] = rect;
+    const sx = ow > 1e-6 ? nw / ow : 1;
+    const sz = od > 1e-6 ? nd / od : 1;
+    for (const o of openings) {
+      o.from = [fix(nx + (o.from[0] - ox) * sx), fix(nz + (o.from[1] - oz) * sz)];
+      o.to = [fix(nx + (o.to[0] - ox) * sx), fix(nz + (o.to[1] - oz) * sz)];
+    }
+  }
+
+  // Grows or shrinks a room into a new bounding box; a polygon's corners move with it.
+  function applyResize(item, drag, rect) {
+    const [ox, oz, ow, od] = drag.rect;
+    if (drag.points && ow > 1e-6 && od > 1e-6) {
+      const sx = rect[2] / ow;
+      const sz = rect[3] / od;
+      item.points = drag.points.map(([x, z]) => [fix(rect[0] + (x - ox) * sx), fix(rect[1] + (z - oz) * sz)]);
+    }
+    item.rect = [fix(rect[0]), fix(rect[1]), fix(rect[2]), fix(rect[3])];
+    const sx = ow > 1e-6 ? rect[2] / ow : 1;
+    const sz = od > 1e-6 ? rect[3] / od : 1;
+    for (const { o, from, to } of drag.openings || []) {
+      o.from = [fix(rect[0] + (from[0] - ox) * sx), fix(rect[1] + (from[1] - oz) * sz)];
+      o.to = [fix(rect[0] + (to[0] - ox) * sx), fix(rect[1] + (to[1] - oz) * sz)];
+    }
+  }
+
   function moveDrag(ev) {
     if (!drag) return;
     const [px, pz] = planPoint(ev);
@@ -1028,17 +1344,41 @@ export async function bootEditor(root) {
       if (hd.includes('e')) x1 = Math.max(edge(x + w + px - drag.start[0], lines.xs, 'x'), x0 + MIN_ROOM);
       if (hd.includes('n')) z0 = Math.min(edge(z + pz - drag.start[1], lines.zs, 'z'), z1 - MIN_ROOM);
       if (hd.includes('s')) z1 = Math.max(edge(z + d + pz - drag.start[1], lines.zs, 'z'), z0 + MIN_ROOM);
-      item.rect = [fix(x0), fix(z0), fix(x1 - x0), fix(z1 - z0)];
+      applyResize(item, drag, [x0, z0, x1 - x0, z1 - z0]);
+    } else if (drag.kind === 'corner') {
+      const room = doc.rooms[drag.index];
+      const c = drag.corner;
+      let [nx, nz] = [drag.points[c][0] + px - drag.start[0], drag.points[c][1] + pz - drag.start[1]];
+      if (!free) {
+        const sx = snapTo([nx], drag.lines.xs);
+        const sz = snapTo([nz], drag.lines.zs);
+        if (sx) { nx = sx.c; drag.guides.push({ axis: 'x', c: sx.c }); }
+        if (sz) { nz = sz.c; drag.guides.push({ axis: 'z', c: sz.c }); }
+      }
+      if (moveCorner(room, c, [round(nx), round(nz)])) drag.blocked = null;
+      else drag.blocked = 'shape';
+    } else if (drag.kind === 'radius') {
+      const room = doc.rooms[drag.index];
+      const c = drag.corner;
+      const n = drag.points.length;
+      const sign = Math.sign(polygonArea(drag.points)) || 1;
+      const radius = cornerRadiusFromPoint(drag.points[(c - 1 + n) % n], drag.points[c], drag.points[(c + 1) % n], [px, pz], sign);
+      if (!radiusAllowed(room, c, radius)) drag.blocked = 'opening';
+      else { drag.blocked = null; setCornerRadius(room, c, fix(radius)); }
     } else if (drag.kind === 'oend') {
       const o = doc.openings[drag.index];
-      const alongX = drag.from[1] === drag.to[1];
-      const k = alongX ? 0 : 1;
-      const other = drag.handle === 'from' ? drag.to : drag.from;
-      const moved = round(drag[drag.handle][k] + (k ? pz - drag.start[1] : px - drag.start[0]));
-      const sign = Math.sign(drag[drag.handle][k] - other[k]) || 1;
-      const end = [...drag[drag.handle]];
-      end[k] = fix(sign > 0 ? Math.max(moved, other[k] + 0.4) : Math.min(moved, other[k] - 0.4));
-      o[drag.handle] = end;
+      const ux = drag.to[0] - drag.from[0];
+      const uz = drag.to[1] - drag.from[1];
+      const len = Math.hypot(ux, uz) || 1;
+      const u = [ux / len, uz / len];
+      const fromStart = drag.handle === 'from';
+      const other = fromStart ? drag.to : drag.from;
+      const start = fromStart ? drag.from : drag.to;
+      const moved = [start[0] + px - drag.start[0], start[1] + pz - drag.start[1]];
+      const along = (moved[0] - other[0]) * u[0] + (moved[1] - other[1]) * u[1];
+      const sign = fromStart ? -1 : 1;
+      const t = sign * Math.max(0.4, sign * round(along));
+      o[drag.handle] = [fix(other[0] + u[0] * t), fix(other[1] + u[1] * t)];
     } else if (drag.kind === 'room') {
       const item = doc.rooms[drag.index];
       let mx = round(px - drag.start[0]);
@@ -1050,8 +1390,8 @@ export async function bootEditor(root) {
         if (sx) { mx = fix(mx + sx.d); drag.guides.push({ axis: 'x', c: sx.c }); }
         if (sz) { mz = fix(mz + sz.d); drag.guides.push({ axis: 'z', c: sz.c }); }
       }
-      item.rect[0] = fix(x + mx);
-      item.rect[1] = fix(z + mz);
+      if (drag.points) item.points = drag.points.map(([x, z]) => [fix(x + mx), fix(z + mz)]);
+      item.rect = [fix(x + mx), fix(z + mz), w, d];
       for (const r of drag.riders) r.o.pos = [fix(r.pos[0] + mx), fix(r.pos[1] + mz)];
       for (const r of drag.openings) {
         r.o.from = [fix(r.from[0] + mx), fix(r.from[1] + mz)];
@@ -1090,11 +1430,45 @@ export async function bootEditor(root) {
       if (!pan.moved && pan.empty && ev.type === 'pointerup') select({ kind: 'home' });
       pan = null;
       plan.classList.remove('panning');
+      return;
     }
+    // A tap on a corner selects it for its radius; a drag moves it.
+    const tap = ev.type === 'pointerup' && drag && !drag.moved && drag.kind === 'corner';
+    if (tap) {
+      const { index, corner } = drag;
+      endDrag();
+      toggleCorner(index, corner);
+      return;
+    }
+    const blocked = drag?.blocked;
     endDrag();
+    if (blocked === 'opening') toast('A door or window is on that wall — move or remove it first', true);
+    else if (blocked === 'shape') toast('That would fold the room over itself', true);
   };
   plan.addEventListener('pointerup', endPointer);
   plan.addEventListener('pointercancel', endPointer);
+
+  // Double-clicking a room edits its corners; in corner mode, double-click a wall to add one.
+  plan.addEventListener('dblclick', (ev) => {
+    if (sel.kind !== 'room') return;
+    const room = doc.rooms[sel.index];
+    if (!room || !here('room', room)) return;
+    const kind = ev.target.closest('[data-kind]')?.dataset.kind;
+    if (kind === 'corner' || kind === 'radius' || kind === 'oend') return;
+    if (!cornerMode) {
+      enterCorners(sel.index);
+      toast(isPhone ? 'Drag a corner dot to shape the room' : 'Drag a corner dot to make a wall diagonal');
+      return;
+    }
+    if (kind === 'resize') return;
+    const at = planPoint(ev);
+    const reach = Math.max(0.3, pixels(isPhone ? 26 : 14)); // metres, near enough to the wall
+    if (wallDistance(room, at) > reach) {
+      toast(isPhone ? 'Double-tap a wall to add a corner' : 'Double-click a wall to add a corner', true);
+      return;
+    }
+    addRoomPoint(sel.index, at);
+  });
 
   // Two fingers on a trackpad scroll the plan; a pinch (or ⌘ / Ctrl and the wheel) zooms.
   plan.addEventListener('wheel', (ev) => {
@@ -1248,6 +1622,17 @@ export async function bootEditor(root) {
     } else if (kind === 'room') {
       head(item.name || item.id, `id: ${item.id}`);
       const list = levelList();
+      const b = roomBounds(item);
+      const corners = roomCorners(item);
+      const radii = roomRadii(item, corners.length);
+      const rectRoom = !isPolygon(item) && !hasRounding(item);
+      const shapeName = isPolygon(item) ? `${corners.length} corners` : hasRounding(item) ? 'Rounded rectangle' : 'Rectangle';
+      const tapTwice = isPhone ? 'Double-tap' : 'Double-click';
+      // The position and size fields work on the bounding box, so they suit every shape.
+      const rectProp = (i) => ({
+        get: () => fix(b[i]),
+        set: (v) => { const next = [...roomBounds(item)]; next[i] = v; resizeRoomWithOpenings(item, next); },
+      });
       nodes.push(section('Room',
         bind('Name', text(), prop(item, 'name', '')),
         row(bind('Flooring', choice(FLOOR_KINDS), { ...prop(item, 'floor', 'oak'), event: 'change' }),
@@ -1255,13 +1640,72 @@ export async function bootEditor(root) {
             get: () => item.level ?? firstLevel(), set: (v) => moveRoomToLevel(sel.index, v), event: 'change',
           }) : null),
         h('div.fields',
-          h('button.btn', { onclick: () => splitRoom(sel.index) }, icon('split', 14, 2.2), 'Split in two'),
-          h('button.btn', { onclick: duplicate }, icon('duplicate', 14, 2.2), 'Duplicate'))),
-      section('Position & size, m',
-        row(bind('X', number(0.1), { ...at(item, 'rect', 0), parse: parseNum }), bind('Z', number(0.1), { ...at(item, 'rect', 1), parse: parseNum })),
-        row(bind('Width', number(0.1), { ...at(item, 'rect', 2), parse: parseNum }), bind('Depth', number(0.1), { ...at(item, 'rect', 3), parse: parseNum })),
-        h('p.note', isPhone ? 'Drag the dots on its corners and sides to resize it. Rooms that share an edge get an interior wall there; add a door or an “open” gap to connect them.'
-          : 'Drag the dots on its corners and sides to resize it; edges snap to other rooms (hold ⌥ not to). Rooms that share an edge get an interior wall there; add a door or an “open” gap to connect them.')));
+          h('button.btn', {
+            onclick: () => splitRoom(sel.index),
+            disabled: !rectRoom,
+            title: rectRoom ? 'Split in two with a door between' : 'Only plain rectangular rooms split; press “Rectangle” first',
+          }, icon('split', 14, 2.2), 'Split in two'),
+          h('button.btn', { onclick: duplicate }, icon('duplicate', 14, 2.2), 'Duplicate'))));
+
+      const shapeFields = [];
+      shapeFields.push(h('div.fields',
+        h(`button.btn${cornerMode ? '.primary' : ''}`, {
+          onclick: () => (cornerMode ? exitCorners() : enterCorners(sel.index)),
+        }, icon('room', 14, 2.2), cornerMode ? 'Done' : 'Edit corners'),
+        h('button.btn', {
+          onclick: () => makeRoomRect(sel.index),
+          disabled: rectRoom,
+          title: 'Square the room again inside its bounding box',
+        }, icon('square', 14, 2.2), 'Rectangle')));
+      if (cornerMode) {
+        shapeFields.push(h('div.fields',
+          h('button.btn', { onclick: () => addRoomPoint(sel.index), disabled: corners.length >= MAX_CORNERS },
+            icon('plus', 14, 2.2), 'Add corner'),
+          h('button.btn', {
+            onclick: () => deleteCorner(sel.index),
+            disabled: activeCorner == null || corners.length <= 3,
+            title: 'Remove the selected corner',
+          }, icon('trash', 14, 2.2), 'Delete corner')));
+        if (activeCorner != null && activeCorner < corners.length) {
+          const sign = Math.sign(polygonArea(corners)) || 1;
+          const maxR = maxCornerRadius(corners[(activeCorner - 1 + corners.length) % corners.length],
+            corners[activeCorner], corners[(activeCorner + 1) % corners.length], sign);
+          shapeFields.push(h('label.field', h('span', 'Corner radius, m'), h('input', {
+            type: 'number', step: 0.05, min: 0, max: fix(maxR), inputmode: 'decimal',
+            disabled: maxR <= 0,
+            value: fix(Math.min(radii[activeCorner] || 0, maxR)),
+            oninput: (ev) => {
+              const raw = Number(ev.target.value);
+              if (!Number.isFinite(raw) || raw < 0) return;
+              const value = fix(clamp(raw, 0, maxR));
+              if (!radiusAllowed(item, activeCorner, value)) {
+                ev.target.value = fix(Math.min(radii[activeCorner] || 0, maxR));
+                toast('A door or window is on that wall — move or remove it first', true);
+                return;
+              }
+              snapshot(`radius${sel.index}${activeCorner}`);
+              setCornerRadius(item, activeCorner, value);
+              touch({ inspector: false });
+            },
+          })));
+          shapeFields.push(h('p.note', maxR > 0
+            ? `Up to ${fix(maxR)} m at this corner (half the shorter wall). Round all four corners of a square at half its wall to make a circle.`
+            : 'This corner turns inward, so it stays square.'));
+        } else {
+          shapeFields.push(h('p.note', 'Tap a corner dot to select it, then set its radius.'));
+        }
+      }
+      shapeFields.push(h('p.note', cornerMode
+        ? (isPhone
+          ? `Drag a dot to move its corner; ${tapTwice.toLowerCase()} a wall to add one. Round one corner at a time.`
+          : 'Drag a dot to move its corner; double-click a wall to add one. Round one corner at a time; hold ⌥ while dragging to ignore snapping.')
+        : `${tapTwice} the room, or press “Edit corners”, to drag its corners and make diagonal walls.`));
+      nodes.push(section('Shape', ...shapeFields));
+
+      nodes.push(section('Position & size, m',
+        row(bind('X', number(0.1), { ...rectProp(0), parse: parseNum }), bind('Z', number(0.1), { ...rectProp(1), parse: parseNum })),
+        row(bind('Width', number(0.1), { ...rectProp(2), parse: parseNum }), bind('Depth', number(0.1), { ...rectProp(3), parse: parseNum })),
+        h('p.note', `${shapeName}. ${isPhone ? 'Drag the dots on its corners and sides to resize it.' : 'Drag the dots on its corners and sides to resize it; edges snap to other rooms (hold ⌥ not to).'} Rooms that share an edge get an interior wall there; add a door or an “open” gap to connect them.`)));
     } else if (kind === 'light') {
       head(item.name || item.id, `id: ${item.id}`);
       item.capabilities ||= [];
@@ -1290,7 +1734,11 @@ export async function bootEditor(root) {
       nodes.push(section('Air conditioner',
         bind('Name', text(), prop(item, 'name', '')),
         row(bind('Room', choice(doc.rooms.map((r) => [r.id, r.name || r.id])), { ...prop(item, 'room'), event: 'change' }),
-          bind('Mounted on wall', choice(WALLS), { ...prop(item, 'wall', 'north'), event: 'change' }))),
+          bind('Mounted on wall', choice(WALLS), {
+            get: () => item.wall || 'north',
+            set: (v) => { item.wall = v; delete item.rot; },
+            event: 'change',
+          }))),
       section('Position, m',
         row(bind('X', number(), { ...at(item, 'pos', 0), parse: parseNum }), bind('Z', number(), { ...at(item, 'pos', 1), parse: parseNum })),
         row(bind('Height', number(), { ...prop(item, 'y', 2.2), parse: parseNum }),
@@ -1299,7 +1747,9 @@ export async function bootEditor(root) {
             set: ([a, b]) => { item.min = a; item.max = b; },
             parse: (v) => { const m = /^(\d+)\s*-\s*(\d+)$/.exec(v.trim()); return m && +m[1] < +m[2] ? [+m[1], +m[2]] : undefined; },
           })),
-        h('p.note', 'Dragging the unit on the plan snaps it to the nearest wall of its room.')),
+        Number.isFinite(item.rot)
+          ? row(bind('Rotation, °', number(5), { ...prop(item, 'rot'), parse: parseNum })) : null,
+        h('p.note', 'Dragging the unit on the plan snaps it to the nearest wall of its room. On a diagonal wall it keeps its own angle.')),
       links.deviceSection(item, 'ac', linkHooks),
       links.sensorSection(item, linkHooks));
     } else if (kind === 'furniture') {
@@ -1543,6 +1993,8 @@ export async function bootEditor(root) {
       for (const key of Object.values(KEYS)) doc[key] ||= [];
       nameInput.value = doc.name || 'Home';
       sel = { kind: 'home' };
+      cornerMode = false;
+      activeCorner = null;
       checkLevel();
       view = null;
       touch();
@@ -1587,7 +2039,8 @@ export async function bootEditor(root) {
       spaceHeld = true;
       plan.classList.add('can-pan');
     } else if (ev.key === 'Escape') {
-      if (sel.kind !== 'home') select({ kind: 'home' });
+      if (cornerMode) exitCorners();
+      else if (sel.kind !== 'home') select({ kind: 'home' });
     } else if (key === 'r' && !cmd) {
       rotate(ev.shiftKey ? 15 : 90);
     } else if (ev.key === 'PageUp' || ev.key === 'PageDown') {
@@ -1597,19 +2050,39 @@ export async function bootEditor(root) {
       if (next) setLevel(next.id);
     } else if ((ev.key === 'Backspace' || ev.key === 'Delete') && sel.index != null) {
       ev.preventDefault();
-      remove(sel.kind, sel.index);
+      if (sel.kind === 'room' && cornerMode) {
+        if (activeCorner != null) deleteCorner(sel.index);
+      } else remove(sel.kind, sel.index);
     } else if (ev.key.startsWith('Arrow') && sel.index != null) {
       const item = doc[KEYS[sel.kind]][sel.index];
-      const targets = item.from ? [item.from, item.to] : [item.pos || item.rect].filter(Boolean);
+      const stepSize = ev.shiftKey ? 0.5 : 0.05;
+      const [mx, mz] = [ev.key === 'ArrowLeft' ? -stepSize : ev.key === 'ArrowRight' ? stepSize : 0,
+        ev.key === 'ArrowUp' ? -stepSize : ev.key === 'ArrowDown' ? stepSize : 0];
+      if (!mx && !mz) return;
+      if (sel.kind === 'room') {
+        ev.preventDefault();
+        snapshot(`nudge${sel.kind}${sel.index}`);
+        const inside = (p) => pointInRoom(item, p, 0.01);
+        const riders = doc.furniture.filter((f) => here('furniture', f) && Array.isArray(f.pos) && inside(f.pos));
+        const opens = doc.openings.filter((o) => here('opening', o) && inside(o.from) && inside(o.to));
+        translateRoom(item, fix(mx), fix(mz));
+        for (const f of riders) f.pos = [fix(f.pos[0] + mx), fix(f.pos[1] + mz)];
+        for (const o of opens) {
+          o.from = [fix(o.from[0] + mx), fix(o.from[1] + mz)];
+          o.to = [fix(o.to[0] + mx), fix(o.to[1] + mz)];
+        }
+        for (const l of doc.lights) if (l.room === item.id) l.pos = [fix(l.pos[0] + mx), fix(l.pos[1] + mz)];
+        for (const a of doc.acs) if (a.room === item.id) a.pos = [fix(a.pos[0] + mx), fix(a.pos[1] + mz)];
+        touch();
+        return;
+      }
+      const targets = item.from ? [item.from, item.to] : [item.pos].filter(Boolean);
       if (!targets.length) return;
       ev.preventDefault();
-      const stepSize = ev.shiftKey ? 0.5 : 0.05;
       snapshot(`nudge${sel.kind}${sel.index}`);
       for (const target of targets) {
-        if (ev.key === 'ArrowLeft') target[0] = fix(target[0] - stepSize);
-        if (ev.key === 'ArrowRight') target[0] = fix(target[0] + stepSize);
-        if (ev.key === 'ArrowUp') target[1] = fix(target[1] - stepSize);
-        if (ev.key === 'ArrowDown') target[1] = fix(target[1] + stepSize);
+        target[0] = fix(target[0] + mx);
+        target[1] = fix(target[1] + mz);
       }
       touch();
     }
@@ -1769,8 +2242,8 @@ export async function bootEditor(root) {
       // A selected room is grabbed anywhere inside it, even over its furniture and lamps.
       const room = sel.kind === 'room' && doc.rooms[sel.index];
       const [px, pz] = planPoint(ev);
-      const inRoom = room && px >= room.rect[0] && px <= room.rect[0] + room.rect[2] && pz >= room.rect[1] && pz <= room.rect[1] + room.rect[3];
-      const handle = kind === 'resize' || kind === 'oend';
+      const inRoom = room && pointInRoom(room, [px, pz]);
+      const handle = ['resize', 'oend', 'corner', 'radius'].includes(kind);
       if (handle || (kind && kind !== 'none' && isSel(kind, index)) || (inRoom && kind !== 'light' && kind !== 'ac')) {
         const what = handle || isSel(kind, index) ? [kind, index] : ['room', sel.index];
         // The view holds still while something is dragged past the plan's edge.
@@ -1810,11 +2283,25 @@ export async function bootEditor(root) {
       if (!fingers.delete(ev.pointerId)) return;
       if (!gesture) return;
       if (gesture.type === 'drag') {
+        const tapped = ev.type === 'pointerup' && drag && !drag.moved;
+        // A tap on a corner selects it; a drag moves it.
+        if (tapped && drag.kind === 'corner') {
+          const { index, corner } = drag;
+          endDrag();
+          gesture = null;
+          toggleCorner(index, corner);
+          // The shape buttons live in the sheet, so it comes up to meet the selected corner.
+          if (ui.sheet === 'closed') setSheet('peek');
+          return;
+        }
         // A tap on what is already selected (just added, say) brings up its details.
-        const tapped = ev.type === 'pointerup' && drag && !drag.moved && drag.kind !== 'resize' && drag.kind !== 'oend';
+        const details = tapped && !['resize', 'oend', 'corner', 'radius'].includes(drag.kind);
+        const blocked = drag?.blocked;
         endDrag();
         gesture = null;
-        if (tapped && ui.sheet === 'closed') { haptic('light'); setSheet('peek'); }
+        if (blocked === 'opening') toast('A door or window is on that wall — move or remove it first', true);
+        else if (blocked === 'shape') toast('That would fold the room over itself', true);
+        if (details && ui.sheet === 'closed') { haptic('light'); setSheet('peek'); }
         return;
       }
       if (gesture.type === 'pinch') {
@@ -1825,7 +2312,8 @@ export async function bootEditor(root) {
       }
       if (gesture.type === 'pan' && !gesture.moved && ev.type === 'pointerup') {
         const { kind, index } = gesture;
-        if (kind && kind !== 'none' && kind !== 'resize' && kind !== 'oend') { haptic('light'); select({ kind, index }); }
+        if (kind === 'none' && cornerMode) exitCorners();
+        if (kind && kind !== 'none' && !['resize', 'oend', 'corner', 'radius'].includes(kind)) { haptic('light'); select({ kind, index }); }
         else if (ui.sheet !== 'closed') closeSheet();
       }
       gesture = null;
@@ -1887,6 +2375,8 @@ export async function bootEditor(root) {
     doc = structuredClone(config);
     for (const key of Object.values(KEYS)) doc[key] ||= [];
     nameInput.value = doc.name || 'Home';
+    cornerMode = false;
+    activeCorner = null;
     checkLevel();
     if (sel.index != null && !doc[KEYS[sel.kind]]?.[sel.index]) sel = { kind: 'home' };
     if (sel.kind === 'level' && !levelList().some((l) => l.id === sel.id)) sel = { kind: 'home' };

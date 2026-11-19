@@ -1,5 +1,6 @@
 // Loads and normalises a floor plan ("home.json"). Everything the 3D scene and the UI
 // know about the apartment comes from this one document, so swapping the file swaps the home.
+import { isPoint as isGeometryPoint, roomCorners, roomBounds, isSimplePolygon } from './geometry.js';
 
 const LIGHT_TYPES = ['ceiling', 'pendant', 'spots', 'floor', 'table', 'strip'];
 const WALLS = ['north', 'south', 'east', 'west'];
@@ -95,18 +96,33 @@ export function normalize(raw) {
 
   const rooms = raw.rooms.map((r) => {
     unique(r.id, 'A room');
-    need(Array.isArray(r.rect) && r.rect.length === 4 && r.rect.every(Number.isFinite),
-      `Room "${r.id}" needs "rect": [x, z, width, depth]`);
-    const [x, z, w, d] = r.rect;
-    need(w > 0 && d > 0, `Room "${r.id}" has an empty rect`);
-    return { id: r.id, name: r.name || r.id, x, z, w, d, floor: r.floor || 'oak', level: levelOf(r, `Room "${r.id}"`) };
+    const hasRect = Array.isArray(r.rect) && r.rect.length === 4 && r.rect.every(Number.isFinite);
+    const hasPoints = Array.isArray(r.points) && r.points.length >= 3 && r.points.every(isGeometryPoint);
+    need(hasRect || hasPoints,
+      `Room "${r.id}" needs "rect": [x, z, width, depth], or "points": [[x, z], [x, z], …] for a diagonal room`);
+    if (hasRect) need(r.rect[2] > 0 && r.rect[3] > 0, `Room "${r.id}" has an empty rect`);
+    if (hasPoints) need(new Set(r.points.map((p) => p.join(','))).size >= 3, `Room "${r.id}" has too few distinct corners`);
+    const corners = roomCorners(r);
+    if (hasPoints) need(isSimplePolygon(corners), `Room "${r.id}" outline crosses itself`);
+    const radii = Array.isArray(r.radii) ? r.radii : [];
+    need(radii.length <= corners.length, `Room "${r.id}" has more "radii" than corners`);
+    need(radii.every((v) => Number.isFinite(v) && v >= 0), `Room "${r.id}" has an invalid "radii"`);
+    // "rect" is the bounding box; the outline is points, with one radius per corner rounded.
+    const [x, z, w, d] = roomBounds(r);
+    need(w > 0 && d > 0, `Room "${r.id}" has an empty outline`);
+    return {
+      id: r.id, name: r.name || r.id, x, z, w, d,
+      ...(hasPoints ? { points: corners } : {}),
+      ...(radii.some((v) => v > 0) ? { radii: Array.from({ length: corners.length }, (_, i) => (radii[i] > 0 ? radii[i] : 0)) } : {}),
+      floor: r.floor || 'oak', level: levelOf(r, `Room "${r.id}"`),
+    };
   });
   const roomIds = new Set(rooms.map((r) => r.id));
   const roomLevel = new Map(rooms.map((r) => [r.id, r.level]));
 
   const openings = (raw.openings || []).map((o, i) => {
     need(isPoint(o.from) && isPoint(o.to), `Opening #${i + 1} needs "from" and "to" points`);
-    need(o.from[0] === o.to[0] || o.from[1] === o.to[1], `Opening #${i + 1} must be axis-aligned`);
+    need(Math.hypot(o.to[0] - o.from[0], o.to[1] - o.from[1]) > 0.01, `Opening #${i + 1} is too short`);
     return { type: o.type || 'door', from: o.from, to: o.to, sill: o.sill ?? 0.85, head: o.head ?? 2.1, level: levelOf(o, `Opening #${i + 1}`) };
   });
 

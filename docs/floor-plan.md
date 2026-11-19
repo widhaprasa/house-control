@@ -106,15 +106,39 @@ draws the floor below faintly so walls and stairs line up. Stairs are furniture 
 | --- | --- |
 | `id` | Unique. Lights and ACs refer to it |
 | `name` | Shown in the room filter |
-| `rect` | `[x, z, width, depth]` |
+| `rect` | `[x, z, width, depth]` — the room, or its bounding box when it is not a rectangle |
+| `points` | Optional: the corners of a diagonal room, `[[x, z], [x, z], …]`, in order. Three or more |
+| `radii` | Optional: one corner radius per corner, in metres (`0` is square). Matches `points`, or for a rectangle the four corners north-west, north-east, south-east, south-west. All four at half a wall make a circle |
 | `floor` | `oak`, `walnut`, `tile` or `stone` |
 | `level` | The floor (storey) it is on, on a home with [several](#levels-floors) |
 
-Rooms are rectangles. Where two of them touch, an inner wall appears on its own; make an L-shaped room out of two.
+Where two rooms share an edge, an inner wall appears on its own; make an L-shaped room out of two. A diagonal
+room lists its corners in `points`; `rect` then stays the bounding box around them. Corners may be at any angle,
+so diagonal walls work anywhere in the plan.
+
+In the editor, double-click a room (or press **Edit corners**) to edit its corners. Drag a dot to move that
+corner; double-click a wall (or press **Add corner**) to insert one; Delete removes the selected corner. Tap a
+corner to select it, then set its **Corner radius** — one corner at a time. Rounding all four corners of a square
+at half its wall makes it a circle. A rounded corner is drawn as a short arc, while the room keeps its real
+corners, so it stays easy to edit. **Rectangle** squares it again inside its bounding box. Keep `rect` beside
+`points` so the iPhone app, which reads the bounding box, can open the plan too.
+
+```jsonc
+// A living room with its north-east corner cut off
+{ "id": "living", "name": "Living", "rect": [0, 0, 6, 4], "floor": "oak",
+  "points": [[0, 0], [5, 0], [6, 1], [6, 4], [0, 4]] }
+
+// A round studio, 6 × 6 m: the four corners of its square rounded at half the wall
+{ "id": "studio", "name": "Studio", "rect": [0, 0, 6, 6], "radii": [3, 3, 3, 3], "floor": "oak" }
+```
 
 ## `openings`
 
-A gap in a wall, given by its two end points on that wall. It must be horizontal or vertical.
+A gap in a wall, given by its two end points on that wall. It may lie on any straight wall — horizontal,
+vertical or diagonal — including the walls of a diagonal room.
+
+A rounded corner is drawn as short straight stretches, and one opening has to sit on a single stretch, so doors
+and windows need a straight stretch as long as the opening.
 
 | Field | Meaning |
 | --- | --- |
@@ -167,6 +191,7 @@ Decoration only. Every piece has `type`, `pos` (`[x, z]` of its centre), an opti
 | `id`, `name`, `room` | As for lights |
 | `wall` | The wall it hangs on: `north`, `south`, `east` or `west` |
 | `pos` | `[x, z]`, on that wall |
+| `rot` | Optional: the angle of the unit in degrees, for a diagonal wall |
 | `y` | Height. Default `2.2` |
 | `min`, `max` | Range of the target temperature. Defaults `16` and `30` |
 | `link`, `tuya` | Link to a real device — see below |
@@ -219,5 +244,5 @@ Device IDs identify your hardware. Remove the `link`, `sensor` and `tuya` object
 
 ## Errors
 
-A plan that does not add up — an unknown room, a duplicate id, an opening that is not axis-aligned — is not
+A plan that does not add up — an unknown room, a duplicate id, a self-crossing room outline, an opening shorter than 1 cm — is not
 rendered half-way: the panel says what is wrong and where, and the editor shows the same in its status bar.

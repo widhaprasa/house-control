@@ -28,7 +28,8 @@ export class ACUnit {
 
     this.group = new THREE.Group();
     this.group.position.set(cfg.pos[0], cfg.y, cfg.pos[1]);
-    this.group.rotation.y = WALL_ROT[cfg.wall];
+    // A unit on a diagonal or round wall carries its own angle; otherwise the wall says it.
+    this.group.rotation.y = Number.isFinite(cfg.rot) ? THREE.MathUtils.degToRad(cfg.rot) : WALL_ROT[cfg.wall];
 
     const body = new THREE.Group();
     body.position.z = 0.1 + 0.105; // sit on the inner face of the wall

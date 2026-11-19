@@ -1,6 +1,7 @@
 // Small modelling kit: cached materials, primitive helpers and procedural floor textures.
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { roomPoints } from '../geometry.js';
 
 const materials = new Map();
 
@@ -139,15 +140,31 @@ export function floorMaterial(kind) {
   return floorMaterials.get(name);
 }
 
-// Floor quad whose UVs are in world metres, so every room shares one texture scale.
+// Floor mesh whose UVs are in world metres, so every room shares one texture scale.
+// The outline is a polygon (a rectangle, a diagonal room, or one with rounded corners).
+function floorShape(points) {
+  // Shapes are drawn in x / -z, then tipped flat, which puts the outline back on the plan.
+  return new THREE.Shape(points.map(([x, z]) => new THREE.Vector2(x, -z)));
+}
+
 export function floorMesh(room, kind) {
-  const geo = new THREE.PlaneGeometry(room.w, room.d);
+  const geo = new THREE.ShapeGeometry(floorShape(roomPoints(room)));
   geo.rotateX(-Math.PI / 2);
-  geo.translate(room.x + room.w / 2, 0, room.z + room.d / 2);
   const pos = geo.attributes.position;
   const uv = geo.attributes.uv;
   for (let i = 0; i < pos.count; i++) uv.setXY(i, pos.getX(i) / TILE, pos.getZ(i) / TILE);
   const mesh = new THREE.Mesh(geo, floorMaterial(kind));
+  mesh.receiveShadow = true;
+  return mesh;
+}
+
+// The slab under a room on a floor above: the same outline, standing `thickness` deep,
+// with its top just under the floor.
+export function slabMesh(room, thickness, material) {
+  const geo = new THREE.ExtrudeGeometry(floorShape(roomPoints(room)), { depth: thickness, bevelEnabled: false });
+  geo.rotateX(-Math.PI / 2);
+  const mesh = new THREE.Mesh(geo, material);
+  mesh.position.y = -0.01 - thickness;
   mesh.receiveShadow = true;
   return mesh;
 }

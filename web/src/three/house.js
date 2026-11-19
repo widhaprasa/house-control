@@ -1,7 +1,8 @@
 // Turns the rooms + openings of a plan into floors, walls and windows.
 import * as THREE from 'three';
-import { box, mat, at, floorMesh } from './kit.js';
+import { box, mat, at, floorMesh, slabMesh } from './kit.js';
 import { SLAB } from '../config.js';
+import { polygonArea, roomPoints } from '../geometry.js';
 
 const EXT_T = 0.2;   // exterior wall thickness
 const INT_T = 0.1;   // interior wall thickness
@@ -11,51 +12,92 @@ const NEAR = 0.15;   // how squarely an outer wall must face the camera to be cu
 const NEAR_BAND = 0.05; // ...and how far past that before it changes its mind
 const WALL_TIME = 0.28; // seconds for a wall to sink or rise
 
-const key = (v) => Math.round(v * 1000);
+const round3 = (v) => Math.round(v * 1000) / 1000;
+
+// A line every wall edge is put on: a direction (unit) and its distance from the origin
+// along the normal. Shared and diagonal edges are found by matching these.
+function lineOf(a, b) {
+  let ux = b[0] - a[0];
+  let uz = b[1] - a[1];
+  const len = Math.hypot(ux, uz);
+  ux /= len;
+  uz /= len;
+  // One direction per line, whichever way the two rooms wound their outline.
+  if (ux < -EPS || (Math.abs(ux) <= EPS && uz < 0)) { ux = -ux; uz = -uz; }
+  const nx = -uz;
+  const nz = ux;
+  const c = a[0] * nx + a[1] * nz;
+  return {
+    dir: [ux, uz], normal: [nx, nz], c,
+    key: `${Math.round(Math.atan2(uz, ux) * 1e4)}:${Math.round(c * 1000)}`,
+  };
+}
 
 // Splits every room edge into wall segments, classifying each as exterior / interior
-// and attaching the opening (door, window, ...) that covers it, if any.
-function wallSegments(config) {
+// and attaching the opening (door, window, ...) that covers it, if any. Walls may run at
+// any angle: a diagonal wall is the edge of a diagonal room, and a rounded corner is many short sides.
+export function wallSegments(config) {
   const lines = new Map();
-  const line = (axis, c) => {
-    const k = `${axis}:${key(c)}`;
-    if (!lines.has(k)) lines.set(k, { axis, c, edges: [], openings: [] });
-    return lines.get(k);
+  const lineFor = (a, b) => {
+    const l = lineOf(a, b);
+    if (!lines.has(l.key)) lines.set(l.key, { ...l, edges: [], openings: [] });
+    return lines.get(l.key);
   };
 
   for (const r of config.rooms) {
-    line('x', r.z).edges.push({ a: r.x, b: r.x + r.w, inside: 1 });
-    line('x', r.z + r.d).edges.push({ a: r.x, b: r.x + r.w, inside: -1 });
-    line('z', r.x).edges.push({ a: r.z, b: r.z + r.d, inside: 1 });
-    line('z', r.x + r.w).edges.push({ a: r.z, b: r.z + r.d, inside: -1 });
+    const pts = roomPoints(r);
+    // roomPoints() winds every outline the same way: positive shoelace area.
+    const sign = polygonArea(pts) > 0 ? 1 : -1;
+    for (let i = 0; i < pts.length; i++) {
+      const a = pts[i];
+      const b = pts[(i + 1) % pts.length];
+      if (Math.hypot(b[0] - a[0], b[1] - a[1]) < EPS) continue;
+      const line = lineFor(a, b);
+      const ta = a[0] * line.dir[0] + a[1] * line.dir[1];
+      const tb = b[0] * line.dir[0] + b[1] * line.dir[1];
+      // Such an outline is clockwise on screen, so this turns the edge a quarter to its outside.
+      line.edges.push({
+        a: Math.min(ta, tb), b: Math.max(ta, tb), room: r.id,
+        outward: [(b[1] - a[1]) * sign, -(b[0] - a[0]) * sign],
+      });
+    }
   }
+
   for (const o of config.openings) {
-    const alongX = o.from[1] === o.to[1];
-    const k = alongX ? `x:${key(o.from[1])}` : `z:${key(o.from[0])}`;
-    const l = lines.get(k);
-    if (!l) continue; // opening that is not on any wall: ignore
-    const p = alongX ? [o.from[0], o.to[0]] : [o.from[1], o.to[1]];
-    l.openings.push({ ...o, a: Math.min(...p), b: Math.max(...p) });
+    // An opening belongs to the wall line its two ends lie on.
+    for (const line of lines.values()) {
+      const pa = Math.abs(o.from[0] * line.normal[0] + o.from[1] * line.normal[1] - line.c);
+      const pb = Math.abs(o.to[0] * line.normal[0] + o.to[1] * line.normal[1] - line.c);
+      if (pa > 0.02 || pb > 0.02) continue;
+      const ta = o.from[0] * line.dir[0] + o.from[1] * line.dir[1];
+      const tb = o.to[0] * line.dir[0] + o.to[1] * line.dir[1];
+      line.openings.push({ ...o, a: Math.min(ta, tb), b: Math.max(ta, tb) });
+      break;
+    }
   }
 
   const segments = [];
-  for (const l of lines.values()) {
-    const pts = [...new Set([...l.edges, ...l.openings].flatMap((e) => [key(e.a), key(e.b)]))]
-      .sort((p, q) => p - q).map((p) => p / 1000);
+  for (const line of lines.values()) {
+    const pts = [...new Set([...line.edges, ...line.openings].flatMap((e) => [round3(e.a), round3(e.b)]))]
+      .sort((p, q) => p - q);
     const run = [];
     for (let i = 0; i < pts.length - 1; i++) {
       const mid = (pts[i] + pts[i + 1]) / 2;
-      const covering = l.edges.filter((e) => e.a < mid && mid < e.b);
+      const covering = line.edges.filter((e) => e.a < mid && mid < e.b);
       if (!covering.length) continue;
+      const opening = line.openings.find((o) => o.a < mid && mid < o.b) || null;
+      const kind = covering.length > 1 ? 'interior' : 'exterior';
+      // Exterior walls face away from their room; a diagonal wall picks its nearest side.
+      const out = covering[0].outward;
+      const sign = out[0] * line.normal[0] + out[1] * line.normal[1] >= 0 ? 1 : -1;
+      const rooms = [...new Set(covering.map((e) => e.room))].sort();
       const seg = {
-        axis: l.axis, c: l.c, a: pts[i], b: pts[i + 1],
-        kind: covering.length > 1 ? 'interior' : 'exterior',
-        inside: covering[0].inside,
-        opening: l.openings.find((o) => o.a < mid && mid < o.b) || null,
+        line, a: pts[i], b: pts[i + 1], kind, opening, rooms,
+        normal: [line.normal[0] * sign, line.normal[1] * sign],
       };
       const prev = run[run.length - 1];
       if (prev && Math.abs(prev.b - seg.a) < EPS && prev.kind === seg.kind
-        && prev.inside === seg.inside && prev.opening === seg.opening) prev.b = seg.b;
+        && prev.opening === seg.opening && prev.rooms.join('|') === seg.rooms.join('|')) prev.b = seg.b;
       else run.push(seg);
     }
     // Free ends get a small extension so corners close up.
@@ -65,6 +107,7 @@ function wallSegments(config) {
     });
     segments.push(...run);
   }
+
   return segments;
 }
 
@@ -89,12 +132,7 @@ export function buildHouse(config, level = config.levels[0]) {
     group.add(plinth);
   } else {
     const slab = mat('#1d2232', { rough: 0.9 });
-    for (const r of rooms) {
-      const s = box(r.w + EXT_T, SLAB - 0.01, r.d + EXT_T, slab, { r: 0 });
-      at(s, r.x + r.w / 2, -SLAB, r.z + r.d / 2);
-      s.receiveShadow = true;
-      group.add(s);
-    }
+    for (const r of rooms) group.add(slabMesh(r, SLAB - 0.01, slab));
   }
 
   for (const room of rooms) {
@@ -114,13 +152,18 @@ export function buildHouse(config, level = config.levels[0]) {
   });
   const frame = mat('#2c3142', { rough: 0.6 });
 
-  // A wall piece running from a..b along its axis, between heights y0..y1.
+  // A wall piece running from a..b along its line, between heights y0..y1.
   const piece = (s, a, b, y0, y1, t, materials = wallMats, parent = group) => {
     const len = b - a;
-    const geo = s.axis === 'x' ? new THREE.BoxGeometry(len, y1 - y0, t) : new THREE.BoxGeometry(t, y1 - y0, len);
+    const geo = new THREE.BoxGeometry(len, y1 - y0, t);
     const m = new THREE.Mesh(geo, materials);
     const mid = (a + b) / 2;
-    m.position.set(s.axis === 'x' ? mid : s.c, (y0 + y1) / 2, s.axis === 'x' ? s.c : mid);
+    m.position.set(
+      s.line.dir[0] * mid + s.line.normal[0] * s.line.c,
+      (y0 + y1) / 2,
+      s.line.dir[1] * mid + s.line.normal[1] * s.line.c,
+    );
+    m.rotation.y = -Math.atan2(s.line.dir[1], s.line.dir[0]);
     m.castShadow = m.receiveShadow = true;
     parent.add(m);
     return m;
@@ -129,9 +172,11 @@ export function buildHouse(config, level = config.levels[0]) {
   // The four sides of the floor, each with its outer walls standing and cut away.
   const sides = new Map();
   const sideOf = (nx, nz) => {
-    const k = `${nx},${nz}`;
+    // Even a diagonal wall belongs to the nearest of the four sides.
+    const [sx, sz] = Math.abs(nx) >= Math.abs(nz) ? [Math.sign(nx) || 1, 0] : [0, Math.sign(nz) || 1];
+    const k = `${sx},${sz}`;
     if (!sides.has(k)) {
-      const side = { nx, nz, tall: new THREE.Group(), curb: new THREE.Group(), near: null, up: 1 };
+      const side = { nx: sx, nz: sz, tall: new THREE.Group(), curb: new THREE.Group(), near: null, up: 1 };
       group.add(side.tall, side.curb);
       sides.set(k, side);
     }
@@ -148,7 +193,7 @@ export function buildHouse(config, level = config.levels[0]) {
 
     if (exterior) {
       // Outward normal of an exterior wall points away from its room.
-      const side = sideOf(s.axis === 'z' ? -s.inside : 0, s.axis === 'x' ? -s.inside : 0);
+      const side = sideOf(s.normal[0], s.normal[1]);
       if (type !== 'door') piece(s, a, b, 0, CURB, t, wallMats, side.curb);
       parent = side.tall;
     }

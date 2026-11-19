@@ -92,9 +92,9 @@ html.mode-editor, html.mode-editor body { user-select: none; }
 .plan { width: 100%; height: 100%; display: block; outline: none; touch-action: none; }
 .hint { position: absolute; left: 0; right: 0; bottom: 10px; text-align: center; font-size: 11.5px; color: var(--faint); pointer-events: none; }
 
-.p-room rect { stroke: #dfe3ec; stroke-width: 0.11; cursor: move; transition: fill 160ms; }
-.p-room:hover rect { filter: brightness(1.2); }
-.p-room.sel rect { stroke: #6aa6ff; stroke-width: 0.14; }
+.p-room rect, .p-room polygon { stroke: #dfe3ec; stroke-width: 0.11; cursor: move; transition: fill 160ms; }
+.p-room:hover rect, .p-room:hover polygon { filter: brightness(1.2); }
+.p-room.sel rect, .p-room.sel polygon { stroke: #6aa6ff; stroke-width: 0.14; }
 .p-label, .p-dim { text-anchor: middle; pointer-events: none; font-family: -apple-system, system-ui, sans-serif; }
 .p-label { font-size: 0.3px; font-weight: 650; fill: rgba(255, 255, 255, 0.86); }
 .p-dim { font-size: 0.2px; fill: rgba(255, 255, 255, 0.4); }
@@ -127,12 +127,17 @@ html.mode-editor, html.mode-editor body { user-select: none; }
 .p-handle.ne, .p-handle.sw, .grab.ne, .grab.sw { cursor: nesw-resize; }
 .p-handle.n, .p-handle.s, .grab.n, .grab.s { cursor: ns-resize; }
 .p-handle.e, .p-handle.w, .grab.e, .grab.w { cursor: ew-resize; }
+.p-handle.vertex, .grab.vertex { cursor: crosshair; fill: #9cc0ff; }
+/* the corner selected for rounding */
+.p-handle.picked { fill: #ffc46b; stroke: #10131c; }
+/* the grip on a rounded corner's arc */
+.p-handle.radius, .grab.radius { cursor: grab; fill: #ff6ad5; stroke: #10131c; }
 .hit.grab { fill: transparent; stroke: none; }
 .p-guide { stroke: #ff6ad5; stroke-width: 1px; vector-effect: non-scaling-stroke; stroke-dasharray: 5 4; pointer-events: none; }
 
 /* the floor under the one being edited */
 .p-ghost { pointer-events: none; }
-.p-ghost rect { fill: rgba(255, 255, 255, 0.025); stroke: rgba(160, 190, 255, 0.4); stroke-width: 1px; vector-effect: non-scaling-stroke; stroke-dasharray: 6 5; }
+.p-ghost rect, .p-ghost polygon { fill: rgba(255, 255, 255, 0.025); stroke: rgba(160, 190, 255, 0.4); stroke-width: 1px; vector-effect: non-scaling-stroke; stroke-dasharray: 6 5; }
 .p-ghost-label { text-anchor: middle; font: 600 0.22px -apple-system, system-ui, sans-serif; fill: rgba(160, 190, 255, 0.38); }
 .p-ghost .p-ghost-stairs { fill: rgba(160, 190, 255, 0.12); stroke-dasharray: none; }
 .p-ghost-step, .p-ghost-arrow { stroke: rgba(160, 190, 255, 0.5); stroke-width: 1px; vector-effect: non-scaling-stroke; fill: none; }
@@ -234,6 +239,7 @@ dl.keys dd { margin: 0; color: var(--muted); }
 .block { margin-top: 18px; }
 .block h3, .devices-list h3 { margin: 0 0 8px; font-size: 10.5px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: var(--faint); }
 .fields { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.fields + .fields { margin-top: 8px; }
 .field { display: block; margin-bottom: 8px; min-width: 0; }
 .field > span { display: block; margin: 0 0 4px 2px; font-size: 11.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .field input:not([type='checkbox']), .field select {
@@ -430,8 +436,8 @@ html.ios.mode-editor body { background: var(--bg); }
 
 .editor.phone .hit { fill: transparent; stroke: none; }
 .editor.phone .p-hit { stroke: transparent; stroke-width: 0.6; }
-.editor.phone .p-room rect, .editor.phone .p-furn rect, .editor.phone .p-light, .editor.phone .p-ac rect, .editor.phone .p-open { cursor: default; }
-.editor.phone .p-room:hover rect { filter: none; }
+.editor.phone .p-room rect, .editor.phone .p-room polygon, .editor.phone .p-furn rect, .editor.phone .p-light, .editor.phone .p-ac rect, .editor.phone .p-open { cursor: default; }
+.editor.phone .p-room:hover rect, .editor.phone .p-room:hover polygon { filter: none; }
 
 .p-tools {
   position: absolute; left: 0; right: 0; bottom: 0; z-index: 6; height: var(--tools-h);
@@ -473,6 +479,7 @@ html.ios.mode-editor body { background: var(--bg); }
 .editor.phone .field input:not([type='checkbox']), .editor.phone .field select { height: 44px; font-size: 16px; border-radius: 12px; padding: 0 12px; }
 .editor.phone .field select { background-position: calc(100% - 17px) 20px, calc(100% - 12px) 20px; padding-right: 30px; }
 .editor.phone .fields { gap: 10px; }
+.editor.phone .fields + .fields { margin-top: 10px; }
 .editor.phone .checks .field { min-height: 40px; }
 .editor.phone .checks .field > span { font-size: 15px; }
 .editor.phone .checks input { width: 22px; height: 22px; }

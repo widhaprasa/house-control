@@ -346,10 +346,10 @@ export function createAgent({ store, config, raw, render, onAction }) {
       description: 'Change the home\'s 3D model with a list of operations, applied together (all or nothing). The model on the user\'s screen updates at once, '
         + 'and the change can be undone with undo_floor_plan_edit. To rebuild a room from photos use one "furnish_room" operation with every piece you see. '
         + 'Operations: set_home{name,outdoorTemp,wallHeight}, add_floor{id,name,wallHeight,below}, update_floor{id,name,wallHeight}, '
-        + 'add_room{id,name,rect,floor,level}, update_room{id,name,rect,floor}, remove_room{id}, '
+        + 'add_room{id,name,rect|points,radii,floor,level}, update_room{id,name,rect|points,radii,floor}, remove_room{id}, '
         + 'furnish_room{room,items[]}, add_furniture{item|items[]}, update_furniture{index,set{}}, remove_furniture{index}, '
         + 'add_opening{type,from,to,sill,head,level}, remove_opening{index}, add_light{id,name,room,type,pos,capabilities,y,rot,length,color}, '
-        + 'update_light{id,set{}}, remove_light{id}, add_ac{id,name,room,wall,pos,y,min,max}, update_ac{id,set{}}, remove_ac{id}, '
+        + 'update_light{id,set{}}, remove_light{id}, add_ac{id,name,room,wall,pos,y,rot,min,max}, update_ac{id,set{}}, remove_ac{id}, '
         + 'add_scene{id,name,icon,lights{},acs{}}, update_scene{id,set{}}, remove_scene{id}. '
         + 'Indexes are those from get_floor_plan, before this edit.',
       inputSchema: {
@@ -365,6 +365,8 @@ export function createAgent({ store, config, raw, render, onAction }) {
                   'add_ac', 'update_ac', 'remove_ac', 'add_scene', 'update_scene', 'remove_scene'] },
                 id: { type: 'string' }, name: { type: 'string' }, room: { type: 'string' },
                 rect: { type: 'array', items: { type: 'number' }, description: '[x, z, width, depth] in metres' },
+                points: { type: 'array', items: { type: 'array', items: { type: 'number' } }, description: 'room: its corners [[x, z], …] for a diagonal room' },
+                radii: { type: 'array', items: { type: 'number' }, description: 'room: one corner radius in metres per corner (0 = square); all four at half a wall makes a circle' },
                 floor: { type: 'string', enum: FLOOR_KINDS, description: 'flooring of a room' },
                 level: { type: 'string', description: 'id of the floor (storey) a room or opening is on, from "levels"' },
                 wallHeight: { type: 'number' }, below: { type: 'boolean', description: 'add_floor: under the others (a basement)' },
@@ -375,6 +377,7 @@ export function createAgent({ store, config, raw, render, onAction }) {
                 type: { type: 'string', description: `opening: door, window, open; light: ${LIGHT_KINDS.join(', ')}` },
                 from: { type: 'array', items: { type: 'number' } }, to: { type: 'array', items: { type: 'number' } },
                 pos: { type: 'array', items: { type: 'number' } },
+                rot: { type: 'number', description: 'AC: degrees, for a unit on a diagonal wall so it faces into the room' },
                 wall: { type: 'string', enum: WALLS },
                 capabilities: { type: 'array', items: { type: 'string', enum: ['brightness', 'temp', 'color'] } },
                 icon: { type: 'string', enum: SCENE_ICONS },
@@ -672,13 +675,17 @@ const capitalise = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 
 const PLAN_RULES = `Floor plan rules:
 - Metres, seen from above. x grows to the east (right), z grows to the south (down). Heights are metres above the floor.
-- A room is a rectangle "rect": [x, z, width, depth]. Rooms that touch share a wall; an L-shaped room is two rooms.
+- A room is a rectangle "rect": [x, z, width, depth]. A diagonal room may add "points": [[x, z], …] (its corners in order);
+  "rect" then stays the bounding box. "radii": [r, …] gives each corner its own rounding in metres (0 = square);
+  all four at half a wall makes a circle. Rooms that touch share a wall; an L-shaped room is two rooms.
 - Furniture: "type", "pos" [x, z] = centre of the piece, "rot" in degrees. At rot 0 a piece's back is to the north and its front faces south (+z);
   rot 90 faces east, -90 faces west, 180 faces north. A sofa against the east wall facing a TV on the west wall: sofa rot -90, TV rot 90.
   "width" is the size along its front; depth comes from the type. Keep pieces inside their room, about 5 cm off the walls.
-- Openings: doors, windows and open gaps sit on walls, given by two end points "from"/"to" on that wall line.
+- Openings: doors, windows and open gaps sit on a wall, given by two end points "from"/"to" on that wall line.
+  The wall may run at any angle (diagonal rooms included); it must have a straight stretch as long as the opening.
 - Lights: "type" ceiling, pendant, spots, floor, table or strip; "capabilities" any of brightness, temp, color (none = plain switch).
-- Air conditioners hang on a wall: "wall" north/south/east/west and "pos" on that wall line.
+- Air conditioners hang on a wall: "wall" north/south/east/west and "pos" on that wall line. On a diagonal wall,
+  add "rot" in degrees so the unit faces into the room (omit it otherwise).
 - Devices marked "linked": true are real hardware: keep their ids, do not remove them.
 - A home on several floors lists them in "levels", lowest first; rooms, furniture and openings carry "level" (the floor's id),
   lamps and ACs are on their room's floor. Every floor uses the same x/z grid, so an upper room sits right above the one under it.

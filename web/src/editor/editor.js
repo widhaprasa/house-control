@@ -1712,7 +1712,7 @@ export async function bootEditor(root, options = {}) {
           const sign = Math.sign(polygonArea(corners)) || 1;
           const maxR = maxCornerRadius(corners[(activeCorner - 1 + corners.length) % corners.length],
             corners[activeCorner], corners[(activeCorner + 1) % corners.length], sign);
-          shapeFields.push(h('label.field', h('span', 'Corner radius, m'), h('input', {
+          shapeFields.push(h('label.field.radius-field', h('span', 'Corner radius, m'), h('input', {
             type: 'number', step: 0.05, min: 0, max: fix(maxR), inputmode: 'decimal',
             disabled: maxR <= 0,
             value: fix(Math.min(radii[activeCorner] || 0, maxR)),
@@ -2402,7 +2402,7 @@ export async function bootEditor(root, options = {}) {
     phone = ui;
   }
 
-  /* ---------- Home Assistant bindings (standalone) ---------- */
+  /* ---------- Home Assistant bindings (standalone editor) ---------- */
 
   const bindingsDialog = standalone ? h('dialog.bindings-dialog', { 'aria-label': 'Home Assistant bindings' }) : null;
   if (bindingsDialog) {

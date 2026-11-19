@@ -4,7 +4,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build"
+    "build": "vite build",
+    "dev:editor": "vite --config vite.editor.config.js",
+    "build:editor": "vite build --config vite.editor.config.js",
+    "preview:editor": "vite preview --config vite.editor.config.js"
   },
   "dependencies": {
     "lucide": "^0.544.0",

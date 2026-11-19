@@ -14,7 +14,6 @@ import {
 import { h, clamp } from '../ui/dom.js';
 import { icon } from '../ui/icons.js';
 import { isNative, isPhone, call, post, haptic, incoming } from '../bridge.js';
-import { createConnections } from './connections.js';
 
 const SVG = 'http://www.w3.org/2000/svg';
 const sv = (tag, attrs = {}, ...kids) => {
@@ -42,15 +41,31 @@ const round = (v, step = 0.05) => Math.round(v / step) * step;
 const fix = (v) => Math.round(v * 1000) / 1000;
 const slug = (t) => String(t).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'item';
 
-export async function bootEditor(root) {
+// The standalone editor has no native integrations: drop every trace of them from a plan.
+function stripConnections(plan) {
+  for (const list of [plan.lights || [], plan.acs || []]) {
+    for (const device of list) {
+      delete device.link;
+      delete device.tuya;
+      delete device.sensor;
+    }
+  }
+  return plan;
+}
+
+export async function bootEditor(root, options = {}) {
+  const standalone = options.standalone === true;
+  const withConnections = !standalone;
   let doc = structuredClone(await loadRawConfig());
   for (const key of Object.values(KEYS)) doc[key] ||= [];
+  if (standalone) stripConnections(doc);
 
   // "connections", "service:smartlife|homeassistant|hue|homekit": where the editor opens
   // (HOUSE_OPEN_EDITOR, or the Mac's Settings window through incoming.openSection).
-  const sectionSel = (at) => (at === 'connections' ? { kind: 'connections' }
-    : at.startsWith('service:') ? { kind: 'service', service: at.slice(8) }
-      : at === 'tuya' ? { kind: 'service', service: 'smartlife' } : { kind: 'home' });
+  const sectionSel = (at) => (!withConnections ? { kind: 'home' }
+    : at === 'connections' ? { kind: 'connections' }
+      : at.startsWith('service:') ? { kind: 'service', service: at.slice(8) }
+        : at === 'tuya' ? { kind: 'service', service: 'smartlife' } : { kind: 'home' });
   let sel = sectionSel(window.__HOUSE_BOOT__?.section || new URLSearchParams(location.search).get('section') || '');
   let dirty = false;
   let world = null;
@@ -62,25 +77,31 @@ export async function bootEditor(root) {
   let activeCorner = null; // the corner tapped in corner mode, or null
   const undo = [];
   const redo = [];
-  const tuya = {
-    info: window.__HOUSE_BOOT__?.tuya || { configured: false, accessId: '', region: 'eu' },
-    account: window.__HOUSE_BOOT__?.smartLife || { connected: false, userCode: '', account: '' },
-    devices: null, busy: false, error: null, qr: null,
-    get linked() { return this.account.connected || this.info.configured; },
-  };
-  const links = createConnections({
-    rerender: () => {
-      renderSidebar();
-      if (['connections', 'service', 'light', 'ac'].includes(sel.kind)) renderInspector();
-    },
-    toast,
-    usedBy: () => links.usedMap(doc),
-    // On the iPhone the connection screens are native ones, shown over the editor.
-    onOpen: (service) => (isPhone && service ? post('openConnection', { service })
-      : select(service ? { kind: 'service', service } : { kind: 'connections' })),
-  });
-  // Smart Life signed in or out on its own screen: the overview and the pickers follow.
-  const smartLifeChanged = () => links.refreshInfo().then(() => links.load({ quiet: true }));
+  let tuya = null;
+  let links = null;
+  let smartLifeChanged = () => {};
+  if (withConnections) {
+    const { createConnections } = await import('./connections.js');
+    tuya = {
+      info: window.__HOUSE_BOOT__?.tuya || { configured: false, accessId: '', region: 'eu' },
+      account: window.__HOUSE_BOOT__?.smartLife || { connected: false, userCode: '', account: '' },
+      devices: null, busy: false, error: null, qr: null,
+      get linked() { return this.account.connected || this.info.configured; },
+    };
+    links = createConnections({
+      rerender: () => {
+        renderSidebar();
+        if (['connections', 'service', 'light', 'ac'].includes(sel.kind)) renderInspector();
+      },
+      toast,
+      usedBy: () => links.usedMap(doc),
+      // On the iPhone the connection screens are native ones, shown over the editor.
+      onOpen: (service) => (isPhone && service ? post('openConnection', { service })
+        : select(service ? { kind: 'service', service } : { kind: 'connections' })),
+    });
+    // Smart Life signed in or out on its own screen: the overview and the pickers follow.
+    smartLifeChanged = () => links.refreshInfo().then(() => links.load({ quiet: true }));
+  }
 
   /* ---------- layout ---------- */
 
@@ -447,11 +468,11 @@ export async function bootEditor(root) {
   function validate() {
     try {
       valid = normalize(structuredClone(doc));
-      const linked = [...doc.lights, ...doc.acs].filter(isLinked).length;
+      const linked = withConnections ? [...doc.lights, ...doc.acs].filter(isLinked).length : 0;
       status.className = 'status';
       const floors = levelList().length > 1 ? `${levelList().length} floors · ` : '';
-      status.replaceChildren(h('span.ok', '●'), ` ${floors}${doc.rooms.length} rooms · ${doc.lights.length} lights · ${doc.acs.length} ACs · `,
-        `${linked} linked to real devices`, dirty ? h('span.dirty', ' · unsaved changes') : '');
+      status.replaceChildren(h('span.ok', '●'), ` ${floors}${doc.rooms.length} rooms · ${doc.lights.length} lights · ${doc.acs.length} ACs`,
+        withConnections ? ` · ${linked} linked to real devices` : '', dirty ? h('span.dirty', ' · unsaved changes') : '');
     } catch (e) {
       valid = null;
       status.className = 'status bad';
@@ -523,8 +544,12 @@ export async function bootEditor(root) {
 
   function renderSidebar() {
     const nodes = [h(`button.row.home-row${sel.kind === 'home' ? '.active' : ''}`, { onclick: () => select({ kind: 'home' }) },
-      icon('home', 15), h('span.row-name', 'Home settings')),
-    links.sidebarRow(sel.kind === 'connections' || sel.kind === 'service', () => select({ kind: 'connections' }))];
+      icon('home', 15), h('span.row-name', 'Home settings'))];
+    if (withConnections) {
+      nodes.push(links.sidebarRow(sel.kind === 'connections' || sel.kind === 'service', () => select({ kind: 'connections' })));
+    } else {
+      nodes.push(h('button.row', { onclick: openBindings }, icon('link', 15), h('span.row-name', 'Bindings')));
+    }
     const list = levelList();
     nodes.push(h('div.group', h('span', 'Floors'), h('span.n', list.length),
       h('button.add', { title: 'Add a floor', 'aria-label': 'Add a floor', onclick: () => addLevel() }, icon('plus', 14, 2.4))));
@@ -547,7 +572,7 @@ export async function bootEditor(root) {
         const active = sel.kind === kind && sel.index === index;
         nodes.push(h(`div.row${active ? '.active' : ''}`, { role: 'button', tabindex: 0, onclick: () => select({ kind, index }) },
           h('span.row-name', name),
-          isLinked(item) ? h('span.linked', { title: 'Linked to a real device' }, icon('link', 12, 2.2)) : null,
+          withConnections && isLinked(item) ? h('span.linked', { title: 'Linked to a real device' }, icon('link', 12, 2.2)) : null,
           h('span.row-sub', sub),
           h('button.del', { title: 'Remove', 'aria-label': `Remove ${name}`, onclick: (e) => { e.stopPropagation(); remove(kind, index); } }, icon('close', 13, 2.4))));
       });
@@ -630,7 +655,7 @@ export async function bootEditor(root) {
       translateRoom(copy, roomBounds(item)[2], 0);
     } else if (kind === 'light' || kind === 'ac') {
       copy.id = uniqueId(item.id);
-      for (const key of ['tuya', 'link', 'sensor']) delete copy[key];
+      for (const key of ['tuya', 'link', 'sensor', 'entity']) delete copy[key];
       if (kind === 'ac') {
         // Slide the copy along the wall: by its own angle on a diagonal or round wall.
         if (Number.isFinite(item.rot)) {
@@ -1006,7 +1031,7 @@ export async function bootEditor(root) {
     doc.lights.forEach((l, i) => {
       if (!here('light', l)) return;
       const g = sv('g', {
-        class: `p-light ${l.type}${isSel('light', i) ? ' sel' : ''}${isLinked(l) ? ' linked' : ''}`, 'data-kind': 'light', 'data-index': i,
+        class: `p-light ${l.type}${isSel('light', i) ? ' sel' : ''}${withConnections && isLinked(l) ? ' linked' : ''}`, 'data-kind': 'light', 'data-index': i,
         transform: `translate(${l.pos[0]} ${l.pos[1]}) rotate(${-(l.rot || 0)})`,
       });
       if (big) g.append(sv('circle', { r: 0.58, class: 'hit' }));
@@ -1537,6 +1562,23 @@ export async function bootEditor(root) {
   // Linking to a real device: links.deviceSection / links.sensorSection (connections.js).
   const linkHooks = { snapshot: () => snapshot(), changed: (note) => { touch(); if (note) toast(note); } };
 
+  // The standalone editor keeps its Home Assistant binding as a plain entity ID.
+  function haEntitySection(item) {
+    const input = text();
+    input.placeholder = 'entity_id';
+    return section('Home Assistant',
+      bind('Entity ID', input, {
+        get: () => item.entity || '',
+        set: (v) => {
+          const value = String(v).trim();
+          if (value) item.entity = value;
+          else delete item.entity;
+        },
+        event: 'input',
+      }),
+      h('p.note', 'Paste the entity ID from Home Assistant (Settings → Devices & services → Entities, or Developer Tools → States).'));
+  }
+
   function renderInspector() {
     const kind = sel.kind;
     const item = sel.index != null ? doc[KEYS[kind]]?.[sel.index] : null;
@@ -1548,7 +1590,7 @@ export async function bootEditor(root) {
     if (kind === 'home') {
       head('Home', 'Global settings of this plan');
       doc.camera ||= { azimuth: 34, elevation: 47 };
-      if (isPhone) nodes.push(section('Real devices', links.sidebarRow(false, () => select({ kind: 'connections' }))));
+      if (withConnections && isPhone) nodes.push(section('Real devices', links.sidebarRow(false, () => select({ kind: 'connections' }))));
       nodes.push(section('Building',
         row(bind('Wall height, m', number(0.1), { ...prop(doc, 'wallHeight', 2.6), parse: parseNum }),
           bind('Inner walls shown, m', number(0.05), { ...prop(doc, 'interiorWallHeight', 1.25), parse: parseNum })),
@@ -1607,11 +1649,11 @@ export async function bootEditor(root) {
       list.length > 1 ? section('Remove',
         confirmButton(`Remove ${l.name}`, () => removeLevel(l.id)),
         h('p.note', `Takes its ${rooms.length} rooms with their lamps, ACs, furniture, doors and windows.`)) : null);
-    } else if (kind === 'connections') {
+    } else if (withConnections && kind === 'connections') {
       head('Connections', 'Where your real lamps and air conditioners live');
       if (isPhone) nodes.push(h('button.back-link', { onclick: () => select({ kind: 'home' }) }, icon('back', 14, 2.2), 'Home'));
       nodes.push(...links.overview());
-    } else if (kind === 'service') {
+    } else if (withConnections && kind === 'service') {
       nodes.push(h('button.back-link', { onclick: () => { links.stopPairing(); select({ kind: 'connections' }); } }, icon('back', 14, 2.2), 'Connections'));
       nodes.push(h('div.insp-head.svc-head', links.tile(sel.service, 40),
         h('div', h('h2', links.title(sel.service)), h('span', links.blurb(sel.service)))));
@@ -1728,7 +1770,7 @@ export async function bootEditor(root) {
           bind('White temperature', h('input', { type: 'checkbox' }), { ...cap('temp'), event: 'change' }),
           bind('Colour', h('input', { type: 'checkbox' }), { ...cap('color'), event: 'change' })),
         h('p.note', 'Leave all three off for a lamp on a plain smart plug: it is then a simple on/off switch.')),
-      links.deviceSection(item, 'light', linkHooks));
+      withConnections ? links.deviceSection(item, 'light', linkHooks) : haEntitySection(item));
     } else if (kind === 'ac') {
       head(item.name || item.id, `id: ${item.id}`);
       nodes.push(section('Air conditioner',
@@ -1750,8 +1792,8 @@ export async function bootEditor(root) {
         Number.isFinite(item.rot)
           ? row(bind('Rotation, °', number(5), { ...prop(item, 'rot'), parse: parseNum })) : null,
         h('p.note', 'Dragging the unit on the plan snaps it to the nearest wall of its room. On a diagonal wall it keeps its own angle.')),
-      links.deviceSection(item, 'ac', linkHooks),
-      links.sensorSection(item, linkHooks));
+      withConnections ? links.deviceSection(item, 'ac', linkHooks) : haEntitySection(item),
+      withConnections ? links.sensorSection(item, linkHooks) : null);
     } else if (kind === 'furniture') {
       const stairs = item.type === 'stairs';
       head(stairs ? 'Stairs' : item.type, stairs ? 'Up to the floor above' : 'Decoration only');
@@ -1967,6 +2009,7 @@ export async function bootEditor(root) {
   }
 
   function download() {
+    if (standalone) stripConnections(doc);
     const a = h('a', { href: URL.createObjectURL(new Blob([JSON.stringify(doc, null, 2)], { type: 'application/json' })), download: `${slug(doc.name)}.json` });
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
@@ -1990,6 +2033,7 @@ export async function bootEditor(root) {
       }
       snapshot();
       doc = json;
+      if (standalone) stripConnections(doc);
       for (const key of Object.values(KEYS)) doc[key] ||= [];
       nameInput.value = doc.name || 'Home';
       sel = { kind: 'home' };
@@ -2358,6 +2402,72 @@ export async function bootEditor(root) {
     phone = ui;
   }
 
+  /* ---------- Home Assistant bindings (standalone) ---------- */
+
+  const bindingsDialog = standalone ? h('dialog.bindings-dialog', { 'aria-label': 'Home Assistant bindings' }) : null;
+  if (bindingsDialog) {
+    document.body.append(bindingsDialog);
+    bindingsDialog.addEventListener('click', (ev) => { if (ev.target === bindingsDialog) bindingsDialog.close(); });
+    bindingsDialog.addEventListener('close', () => { renderSidebar(); renderInspector(); });
+  }
+
+  function openBindings() {
+    if (!bindingsDialog) return;
+    renderBindings();
+    if (!bindingsDialog.open) bindingsDialog.showModal();
+    bindingsDialog.querySelector('input')?.focus();
+  }
+
+  function bindingsRow(device, kind) {
+    const input = h('input', {
+      type: 'text', value: device.entity || '', spellcheck: 'false',
+      placeholder: kind === 'ac' ? 'climate.entity_id' : 'light.entity_id',
+      oninput: (ev) => {
+        const value = ev.target.value.trim();
+        snapshot(`bindings:${device.id}`);
+        if (value) device.entity = value;
+        else delete device.entity;
+        dirty = true;
+        validate();
+      },
+    });
+    return h('label.bindings-row', h('span.bindings-name', device.name || device.id), input);
+  }
+
+  function renderBindings() {
+    if (!bindingsDialog) return;
+    const levels = levelsOf(doc);
+    const devices = [
+      ...doc.lights.map((d) => ({ d, kind: 'light' })),
+      ...doc.acs.map((d) => ({ d, kind: 'ac' })),
+    ];
+    const groups = [];
+    for (const l of levels) {
+      const onLevel = devices.filter(({ d, kind }) => levelOf(kind, d) === l.id);
+      if (!onLevel.length) continue;
+      const group = h('section.bindings-group');
+      if (levels.length > 1) group.append(h('h4', l.name));
+      const rooms = doc.rooms.filter((r) => (r.level ?? levels[0].id) === l.id);
+      for (const room of rooms) {
+        const inRoom = onLevel.filter(({ d }) => d.room === room.id);
+        if (!inRoom.length) continue;
+        group.append(h('h5', room.name || room.id));
+        for (const { d, kind } of inRoom) group.append(bindingsRow(d, kind));
+      }
+      const unassigned = onLevel.filter(({ d }) => !rooms.some((r) => r.id === d.room));
+      if (unassigned.length) {
+        group.append(h('h5', 'Unassigned'));
+        for (const { d, kind } of unassigned) group.append(bindingsRow(d, kind));
+      }
+      groups.push(group);
+    }
+    bindingsDialog.replaceChildren(
+      h('div.bindings-head', h('b', 'Home Assistant bindings'), h('button.p-text', { onclick: () => bindingsDialog.close() }, 'Done')),
+      h('p.bindings-hint', 'Paste the entity ID from Home Assistant for each lamp and AC.'),
+      h('div.bindings-list', groups.length ? groups : h('p.bindings-empty', 'No lamps or air conditioners yet.')),
+    );
+  }
+
   renderSidebar();
   renderPlan();
   renderInspector();
@@ -2365,7 +2475,7 @@ export async function bootEditor(root) {
   dirty = false;
   validate();
   schedulePreview(0);
-  incoming.openSection = (at) => select(sectionSel(at));
+  if (withConnections) incoming.openSection = (at) => select(sectionSel(at));
   // A plan saved on the other device (the Mac, or the paired iPhone) while this editor is open.
   incoming.planArrived = (config, from) => {
     if (dirty) {
@@ -2373,6 +2483,7 @@ export async function bootEditor(root) {
       return;
     }
     doc = structuredClone(config);
+    if (standalone) stripConnections(doc);
     for (const key of Object.values(KEYS)) doc[key] ||= [];
     nameInput.value = doc.name || 'Home';
     cornerMode = false;
@@ -2386,6 +2497,6 @@ export async function bootEditor(root) {
     toast(`Updated from ${from || 'your other device'}`);
   };
 
-  window.__editor = { get doc() { return doc; }, select, tuya, links, phone };
+  window.__editor = { get doc() { return doc; }, select, phone, ...(withConnections ? { tuya, links } : {}) };
   post('ready');
 }

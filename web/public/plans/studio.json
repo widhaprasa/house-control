@@ -7,7 +7,7 @@
   "outdoorTemp": 31,
 
   "rooms": [
-    { "id": "main", "name": "Studio",   "rect": [0, 0, 6.2, 4.8],   "floor": "walnut" },
+    { "id": "main", "name": "Studio",   "rect": [0, 0, 6.2, 4.8],   "floor": "walnut", "radii": [1.0, 0, 0, 1.0] },
     { "id": "bath", "name": "Bathroom", "rect": [6.2, 0, 2.2, 2.6], "floor": "tile" },
     { "id": "hall", "name": "Hall",     "rect": [6.2, 2.6, 2.2, 2.2], "floor": "stone" }
   ],

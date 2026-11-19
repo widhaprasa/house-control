@@ -15,7 +15,7 @@
     { "id": "living", "name": "Living", "rect": [0, 3.4, 6.0, 4.6], "floor": "oak", "level": "ground" },
     { "id": "kitchen", "name": "Kitchen", "rect": [6.0, 3.4, 4.0, 4.6], "floor": "stone", "level": "ground" },
     { "id": "hall", "name": "Hall", "rect": [3.6, 0, 2.6, 3.4], "floor": "tile", "level": "ground" },
-    { "id": "study", "name": "Study", "rect": [0, 0, 3.6, 3.4], "floor": "walnut", "level": "ground" },
+    { "id": "study", "name": "Study", "rect": [0, 0, 3.6, 3.4], "floor": "walnut", "radii": [0.7, 0, 0, 0], "level": "ground" },
     { "id": "wc", "name": "Guest bath", "rect": [6.2, 0, 3.8, 3.4], "floor": "tile", "level": "ground" },
     { "id": "bedroom", "name": "Bedroom", "rect": [0, 3.4, 5.0, 4.6], "floor": "walnut", "level": "upper" },
     { "id": "kids", "name": "Kids room", "rect": [5.0, 3.4, 5.0, 4.6], "floor": "oak", "level": "upper" },

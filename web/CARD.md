@@ -13,7 +13,7 @@ from taps, long presses and double taps on lamps, ACs and rooms.
 - Web only.
 - A normal Lovelace card; in a **panel view** it fills the panel.
 - No `background` mode, no card-mod code, no theme, no child cards.
-- No camera orbit; gestures only.
+- Camera: drag to orbit, wheel/two-finger to pan, pinch/⌘-scroll to zoom, like the app.
 - The plan is loaded once per card load.
 - Ship a single JS bundle; no HACS packaging.
 
@@ -140,6 +140,8 @@ is only passed to `ll-custom`.
 - Pause rendering when the card is off-screen or the browser tab is hidden.
 - Dispose the renderer and listeners when the card is removed.
 - The plan's camera and levels are used.
+- The 3D stage keeps the app's camera controls: drag to orbit, wheel or two fingers to pan, pinch or ⌘-scroll to zoom. The card captures touches over the stage, so use a panel view or a full-size section.
+- If WebGL is unavailable or the browser cannot create a usable context, the card shows a message with a Reload page button.
 
 ## Floor switcher
 
@@ -157,7 +159,7 @@ Recommended: remember the last floor per plan in `localStorage`.
 - `fetch(plan_url)` with no-store caching and a timeout.
 - Relative URLs resolve against the Home Assistant origin (`/local/...` works).
 - External URLs need CORS and HTTPS.
-- Validate with `normalize`; show a card error with **Retry** on failure.
+- Validate with `normalize`; show a card error with a Reload page button on failure.
 - Inline `plan:` is an optional fallback for testing.
 - Load once; reload the dashboard to pick up a changed plan.
 
@@ -190,7 +192,6 @@ migrated when edited). The Bindings dialog and duplicate/export logic use the sa
 - `more-info`, `toggle`, `call-service`, `url`, `navigate` actions.
 - Room entity ids in the plan/editor.
 - Auto-refreshing the plan.
-- Camera orbit/zoom in the card.
 - HACS packaging.
 
 ## Acceptance tests

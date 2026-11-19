@@ -26,7 +26,9 @@ export function createWorld(canvas, config, store, {
 }) {
   const lowQuality = quality === 'low';
   const maxDpr = lowQuality ? 1.5 : 2;
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false, powerPreference: 'high-performance' });
+  const renderer = new THREE.WebGLRenderer({
+    canvas, antialias: false, alpha: false, powerPreference: 'high-performance',
+  });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, maxDpr));
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.05;

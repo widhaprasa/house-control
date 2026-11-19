@@ -64,11 +64,33 @@ for (const room of plan.rooms) {
   };
 }
 
-card.setConfig({ plan_url: '/dev/demo-plan.json', quality: 'low', devices, rooms });
+// Simulate a WebGL context whose getShaderPrecisionFormat is broken (some embedded
+// browsers). Open /?test&precision to check the lowp fallback.
+if (new URLSearchParams(location.search).has('precision')) {
+  const original = HTMLCanvasElement.prototype.getContext;
+  HTMLCanvasElement.prototype.getContext = function (type, attrs) {
+    const context = original.call(this, type, attrs);
+    if (context && String(type).startsWith('webgl')) context.getShaderPrecisionFormat = () => null;
+    return context;
+  };
+}
+
+const config = { plan_url: '/dev/demo-plan.json', quality: 'low', devices, rooms };
+card.setConfig(config);
 card.hass = { states, callService: async () => {} };
 window.__houseCard = card;
 
 if (new URLSearchParams(location.search).has('test')) {
+  // Synthetic PointerEvents do not own a real pointerId; ignore pointer capture errors
+  // from the world's camera controls during the test.
+  const setCapture = HTMLCanvasElement.prototype.setPointerCapture;
+  HTMLCanvasElement.prototype.setPointerCapture = function (id) {
+    try { setCapture.call(this, id); } catch { /* synthetic pointer */ }
+  };
+
+  // Simulate Home Assistant setting the config again after the card is already up.
+  setTimeout(() => card.setConfig(config), 1500);
+
   setTimeout(() => {
     card._fire?.({ action: 'fire-dom-event', popup_menu: { test: true } });
   }, 3000);
@@ -90,7 +112,7 @@ if (new URLSearchParams(location.search).has('test')) {
     const canvas = card.shadowRoot.querySelector('.hc-canvas');
     return canvas.dispatchEvent(new PointerEvent(type, {
       bubbles: true, composed: true, clientX: hit.x, clientY: hit.y,
-      button: 0, buttons: type === 'pointerdown' ? 1 : 0, pointerId: 1, pointerType: 'mouse', ...extra,
+      button: 0, buttons: type === 'pointerdown' ? 1 : 0, pointerId: 1, pointerType: 'mouse', isPrimary: true, ...extra,
     }));
   }
 

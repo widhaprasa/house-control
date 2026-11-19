@@ -21,6 +21,10 @@ class HouseControlCard extends HTMLElement {
         <canvas class="hc-canvas"></canvas>
         <div class="hc-loading">Loading the home…</div>
         <div class="hc-error" hidden></div>
+        <div class="hc-preview" hidden>
+          <strong>House Control</strong>
+          <span>The 3D home appears when the dashboard is saved.</span>
+        </div>
         <div class="hc-floors" hidden></div>
       </div>`;
 
@@ -28,6 +32,7 @@ class HouseControlCard extends HTMLElement {
     this._canvas = this.shadowRoot.querySelector('.hc-canvas');
     this._loading = this.shadowRoot.querySelector('.hc-loading');
     this._error = this.shadowRoot.querySelector('.hc-error');
+    this._previewEl = this.shadowRoot.querySelector('.hc-preview');
     this._floors = this.shadowRoot.querySelector('.hc-floors');
 
     this._config = null;
@@ -38,6 +43,8 @@ class HouseControlCard extends HTMLElement {
     this._level = null;
     this._token = 0;
     this._visible = true;
+    this._preview = false;
+    this._worldFailed = false;
     this._gesture = null;
     this._gestures = false;
     this._lastTap = null;
@@ -51,6 +58,11 @@ class HouseControlCard extends HTMLElement {
     this._onPointerCancel = () => this._cancelGesture();
     this._onContextMenu = (ev) => ev.preventDefault();
     this._onVisibility = () => this._applyRunning();
+    this._onContextLost = (ev) => {
+      ev.preventDefault();
+      this._world?.setRunning(false);
+      this._showError(true, 'The 3D view lost its graphics context. Reload the page.');
+    };
   }
 
   static getStubConfig() {
@@ -74,6 +86,20 @@ class HouseControlCard extends HTMLElement {
     }
   }
 
+  // Home Assistant sets this while the card is shown in the card editor preview. Keep the
+  // preview light: do not create a WebGL context just to show a tiny editor thumbnail.
+  set preview(value) {
+    const next = Boolean(value);
+    if (next === this._preview) return;
+    this._preview = next;
+    if (next) {
+      this._teardown();
+      this._showPreview();
+    } else {
+      this._start();
+    }
+  }
+
   connectedCallback() {
     this._start();
   }
@@ -94,7 +120,13 @@ class HouseControlCard extends HTMLElement {
 
   async _start() {
     if (!this.isConnected || !this._config) return;
+    if (this._preview) {
+      this._showPreview();
+      return;
+    }
     this._teardown();
+    this._hidePreview();
+    this._worldFailed = false;
     const token = this._token;
     this._showError(false);
     this._showLoading(true);
@@ -116,28 +148,43 @@ class HouseControlCard extends HTMLElement {
       this._level = this._initialLevel(plan);
       this._buildFloors();
       this._updateFloors();
+      this._resetCanvas();
       this._ensureObservers();
       this._attachGestures();
       this._unsub = store.on(() => this._updateFloors());
 
-      this._world = createWorld(this._canvas, plan, store, {
+      this._maybeCreateWorld();
+    } catch (error) {
+      if (token !== this._token) return;
+      this._showLoading(false);
+      this._showError(true, this._friendlyError(error));
+    }
+  }
+
+  _maybeCreateWorld() {
+    if (!this._plan || this._world || !this.isConnected || this._preview || this._worldFailed) return;
+    if (!this._canvas.clientWidth || !this._canvas.clientHeight) return;
+    try {
+      this._world = createWorld(this._canvas, this._plan, this._store, {
         level: this._level,
         quality: QUALITY.has(this._config.quality) ? this._config.quality : 'low',
-        controls: false,
+        controls: true,
         background: STAGE_BG,
         onHover: () => {},
         onPick: () => {},
         onLevel: (id) => { this._level = id; this._updateFloors(); },
       });
+      this._canvas.addEventListener('webglcontextlost', this._onContextLost, false);
       this._world.setInsets(0, 0);
       this._world.resize();
       this._applyRunning();
       this._updateFloors();
       this._showLoading(false);
+      this._hidePreview();
     } catch (error) {
-      if (token !== this._token) return;
+      this._worldFailed = true;
       this._showLoading(false);
-      this._showError(true, error?.message || String(error));
+      this._showError(true, this._friendlyError(error));
     }
   }
 
@@ -171,6 +218,7 @@ class HouseControlCard extends HTMLElement {
     this._intersection?.disconnect();
     document.removeEventListener('visibilitychange', this._onVisibility);
 
+    this._canvas.removeEventListener('webglcontextlost', this._onContextLost, false);
     this._detachGestures();
     this._clearPendingTap();
     this._cancelGesture();
@@ -188,15 +236,20 @@ class HouseControlCard extends HTMLElement {
     this._floors.replaceChildren();
     this._showError(false);
     this._showLoading(false);
+    this._hidePreview();
   }
 
   _ensureObservers() {
     if (!this._resizeObserver) {
-      this._resizeObserver = new ResizeObserver(() => this._world?.resize());
+      this._resizeObserver = new ResizeObserver(() => {
+        if (this._world) this._world.resize();
+        else this._maybeCreateWorld();
+      });
     }
     if (!this._intersection) {
       this._intersection = new IntersectionObserver(([entry]) => {
         this._visible = entry.isIntersecting;
+        if (this._visible) this._maybeCreateWorld();
         this._applyRunning();
       });
     }
@@ -278,6 +331,16 @@ class HouseControlCard extends HTMLElement {
 
   /* ---------- taps, holds, double taps ---------- */
 
+  // After world.dispose() the old canvas has a force-lost context. Replacing the canvas
+  // gives the next renderer a clean context instead of trying to revive a dead one.
+  _resetCanvas() {
+    this._detachGestures();
+    const next = document.createElement('canvas');
+    next.className = 'hc-canvas';
+    this._canvas.replaceWith(next);
+    this._canvas = next;
+  }
+
   _attachGestures() {
     if (this._gestures) return;
     this._canvas.addEventListener('pointerdown', this._onPointerDown);
@@ -301,7 +364,7 @@ class HouseControlCard extends HTMLElement {
   }
 
   _pointerDown(ev) {
-    if (ev.button !== 0 || !this._world) return;
+    if (!ev.isPrimary || ev.button !== 0 || !this._world) return;
     this._clearLong();
     const target = this._world.pickAt(ev.clientX, ev.clientY) || null;
     const gesture = this._gesture = {
@@ -317,6 +380,7 @@ class HouseControlCard extends HTMLElement {
   }
 
   _pointerMove(ev) {
+    if (!ev.isPrimary) { this._cancelGesture(); return; }
     const gesture = this._gesture;
     if (!gesture) return;
     if (Math.hypot(ev.clientX - gesture.x, ev.clientY - gesture.y) > MOVE_LIMIT) {
@@ -326,6 +390,7 @@ class HouseControlCard extends HTMLElement {
   }
 
   _pointerUp(ev) {
+    if (!ev.isPrimary) { this._cancelGesture(); return; }
     const gesture = this._gesture;
     this._gesture = null;
     if (!gesture) return;
@@ -399,6 +464,25 @@ class HouseControlCard extends HTMLElement {
     this._loading.hidden = !show;
   }
 
+  _showPreview() {
+    this._showError(false);
+    this._showLoading(false);
+    this._floors.hidden = true;
+    this._previewEl.hidden = false;
+  }
+
+  _hidePreview() {
+    this._previewEl.hidden = true;
+  }
+
+  _friendlyError(error) {
+    const message = String(error?.message || error);
+    if (/WebGL|precision|context/i.test(message)) {
+      return 'WebGL is not available in this browser. Enable hardware acceleration, or open the dashboard in a browser that supports WebGL.';
+    }
+    return message;
+  }
+
   _showError(show, message = '') {
     if (!show) {
       this._error.hidden = true;
@@ -409,11 +493,14 @@ class HouseControlCard extends HTMLElement {
     this._error.hidden = false;
     const text = document.createElement('span');
     text.textContent = `The home could not be shown. ${message}`.trim();
-    const retry = document.createElement('button');
-    retry.type = 'button';
-    retry.textContent = 'Retry';
-    retry.addEventListener('click', () => this._start());
-    this._error.replaceChildren(text, retry);
+    const actions = document.createElement('div');
+    actions.className = 'hc-error-actions';
+    const reload = document.createElement('button');
+    reload.type = 'button';
+    reload.textContent = 'Reload page';
+    reload.addEventListener('click', () => location.reload());
+    actions.append(reload);
+    this._error.replaceChildren(text, actions);
   }
 }
 

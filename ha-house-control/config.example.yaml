@@ -1,0 +1,35 @@
+type: custom:house-control-card
+plan_url: /local/house-control/plan.json
+quality: low
+
+# Actions exist only under devices/rooms. There are no default/global actions.
+# Generate all of these from your plan with:
+#   node scripts/plan-to-config.mjs path/to/plan.json > house-control-card.yaml
+
+devices:
+  living.main:
+    tap_action:
+      action: fire-dom-event
+      popup_menu:
+        entity_id: light.living_room_main
+    hold_action:
+      action: fire-dom-event
+      popup_menu:
+        entity_id: light.living_room_main
+    double_tap_action:
+      action: fire-dom-event
+      popup_menu:
+        entity_id: light.living_room_main
+
+  living.ac:
+    tap_action:
+      action: fire-dom-event
+      popup_menu:
+        entity_id: climate.living_room
+
+rooms:
+  living:
+    tap_action:
+      action: fire-dom-event
+      popup_menu:
+        room: living

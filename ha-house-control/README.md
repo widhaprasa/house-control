@@ -50,6 +50,29 @@ rooms:
 
 There are no global/default actions. A lamp, AC or room without an entry does nothing.
 
+## Generate the card config from a plan
+
+```bash
+node scripts/plan-to-config.mjs path/to/plan.json > house-control-card.yaml
+```
+
+or:
+
+```bash
+npm run --silent config -- path/to/plan.json > house-control-card.yaml
+```
+
+Options:
+
+- `--plan-url /local/house-control/plan.json` — the URL the card will fetch.
+- `--quality low|high` — defaults to `low`.
+- `--no-actions` — emit only the card header and plan URL.
+
+The generated config has per-device and per-room `tap_action` / `hold_action` /
+`double_tap_action` entries, all using `action: fire-dom-event` with a `popup_menu`
+containing the device `entity_id` or the room id. Edit those `popup_menu` blocks for your
+own listener. Lamps/ACs without an `entity_id` are skipped and listed on stderr.
+
 ## Actions
 
 Only `fire-dom-event` is supported. The card dispatches:
@@ -65,7 +88,8 @@ new CustomEvent('ll-custom', {
 No `entity_id` or target is added automatically. Add it yourself under your event key.
 
 Gestures: `tap_action`, `hold_action` (about 500 ms), `double_tap_action` (about 300 ms;
-the single tap waits for the double window).
+the single tap waits for the double window). The 3D stage keeps the app's camera: drag to
+orbit, wheel or two fingers to pan, pinch or ⌘-scroll to zoom.
 
 ## Development
 

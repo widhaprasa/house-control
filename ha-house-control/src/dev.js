@@ -65,12 +65,14 @@ for (const room of plan.rooms) {
 }
 
 const params = new URLSearchParams(location.search);
+const STAGE_GRADIENT = 'radial-gradient(90% 70% at 20% 0%, #5b6f8f 0%, transparent 60%), radial-gradient(80% 80% at 90% 100%, #6e5a4a 0%, transparent 60%), #2b3140';
 const config = {
   plan: '/dev/demo-plan.json',
   quality: 'low',
   devices,
   rooms,
   ...(params.has('transparent') ? { background: 'transparent' } : {}),
+  ...(params.has('gradient') ? { background: STAGE_GRADIENT } : {}),
   ...(params.get('tooltip') === 'false' ? { tooltip: false } : {}),
 };
 card.setConfig(config);
@@ -246,6 +248,7 @@ if (new URLSearchParams(location.search).has('test')) {
     window.__houseCheck = {
       canvas: !!canvas,
       background: root ? getComputedStyle(root.querySelector('.hc-card')).backgroundColor : null,
+      backgroundImage: root ? getComputedStyle(root.querySelector('.hc-card')).backgroundImage : null,
       width: canvas?.clientWidth || 0,
       height: canvas?.clientHeight || 0,
       floors,

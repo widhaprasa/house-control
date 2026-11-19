@@ -12,6 +12,7 @@ const DRAG_LIMIT = 5;
 const STAGE_BG = '#0a0e1a';
 const MODE_LABEL = { cool: 'Cool', heat: 'Heat', dry: 'Dry', fan: 'Fan', auto: 'Auto' };
 const MODE_COLORS = { cool: '#5db2ff', heat: '#ff8c3a', dry: '#62e0cf', fan: '#cfdcff', auto: '#9bd28a' };
+const CSS_LAYER = /(?:gradient|url)\(/i;
 
 class HouseControlCard extends HTMLElement {
   constructor() {
@@ -248,14 +249,19 @@ class HouseControlCard extends HTMLElement {
     if (!running) this._hideTooltip();
   }
 
-  _stageBackground() {
+  _backgroundStyle() {
     const value = this._config?.background;
-    if (value === 'transparent' || value === 'none') return null;
+    if (value === 'transparent' || value === 'none') return 'transparent';
     return typeof value === 'string' && value ? value : STAGE_BG;
   }
 
+  _stageBackground() {
+    const style = this._backgroundStyle();
+    return style === 'transparent' || CSS_LAYER.test(style) ? null : style;
+  }
+
   _applyBackground() {
-    this._root.style.setProperty('--hc-background', this._stageBackground() || 'transparent');
+    this._root.style.setProperty('--hc-background', this._backgroundStyle());
   }
 
   _initialLevel(plan) {

@@ -28,7 +28,7 @@ type: custom:house-control-card
 plan: /local/house-control/plan.json
 quality: low
 tooltip: true
-# background: transparent   # default #0a0e1a; transparent follows the HA card
+# background: transparent   # follows the HA card; gradients/images also work
 
 devices:
   living.main:
@@ -50,7 +50,6 @@ rooms:
         room: living
 ```
 
-
 ## Background
 
 The 3D stage is `#0a0e1a` by default. Set `background: transparent` to let the Home
@@ -60,7 +59,17 @@ Assistant card/page background show through, or use any CSS color:
 background: transparent
 ```
 
-This is the card stage color, not Lovelace's `background: true` layout option. The
+A CSS gradient or image also works. The 3D canvas becomes transparent so the CSS
+background shows through:
+
+```yaml
+background: >-
+  radial-gradient(90% 70% at 20% 0%, #5b6f8f 0%, transparent 60%),
+  radial-gradient(80% 80% at 90% 100%, #6e5a4a 0%, transparent 60%),
+  #2b3140
+```
+
+This is the card stage background, not Lovelace's `background: true` layout option. The
 dashboard background itself comes from your Home Assistant theme/dashboard.
 
 ## Generate the card config from a plan

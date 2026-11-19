@@ -43,7 +43,7 @@ type: custom:house-control-card
 plan: /local/house-control/plan.json       # URL or inline plan: {...}
 quality: low                               # low | high
 tooltip: true                              # hover name/status for lamps and ACs
-# background: transparent                 # or a CSS color; default #0a0e1a
+# background: transparent                 # or a CSS color/gradient/image
 
 # Actions per plan device id; add only the gestures you want
 devices:
@@ -76,7 +76,7 @@ rooms:
 ```
 
 - There are no default actions. A lamp, AC or room without a `tap_action` does nothing on tap; hold/double still work when configured.
-- Optional `background` is a CSS color or `transparent` to show the Home Assistant card/page behind the stage; default `#0a0e1a`.
+- Optional `background` is a CSS color, gradient/image, or `transparent`; CSS layers render behind a transparent 3D stage. Default `#0a0e1a`.
 - Optional `tooltip` defaults to `true`; set it to `false` to disable the lamp/AC hover label.
 - Optional `level` sets the initial floor id; otherwise the floor last chosen on this plan name is restored, then the first floor.
 - `plan` can be a URL or the plan object inline.
@@ -226,7 +226,7 @@ migrated when edited). The Bindings dialog and duplicate/export logic use the sa
 ## Acceptance tests
 
 - Card loads a plan from `/local/...` in a panel view and fills the panel.
-- `background: transparent` shows the HA card/page behind the stage; a color sets the stage background.
+- `background: transparent` shows the HA card/page behind the stage; a color sets the stage background; a gradient/image renders behind a transparent canvas.
 - Rounded and diagonal rooms render.
 - Lamps/ACs reflect Home Assistant state changes.
 - Tap, hold and double tap run their configured action (`fire-dom-event`, `toggle`, `turn_on`, `turn_off` or `call-service`).

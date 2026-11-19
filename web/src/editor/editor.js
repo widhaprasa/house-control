@@ -655,7 +655,7 @@ export async function bootEditor(root, options = {}) {
       translateRoom(copy, roomBounds(item)[2], 0);
     } else if (kind === 'light' || kind === 'ac') {
       copy.id = uniqueId(item.id);
-      for (const key of ['tuya', 'link', 'sensor', 'entity']) delete copy[key];
+      for (const key of ['tuya', 'link', 'sensor', 'entity', 'entity_id']) delete copy[key];
       if (kind === 'ac') {
         // Slide the copy along the wall: by its own angle on a diagonal or round wall.
         if (Number.isFinite(item.rot)) {
@@ -1568,11 +1568,12 @@ export async function bootEditor(root, options = {}) {
     input.placeholder = 'entity_id';
     return section('Home Assistant',
       bind('Entity ID', input, {
-        get: () => item.entity || '',
+        get: () => item.entity_id || item.entity || '',
         set: (v) => {
           const value = String(v).trim();
-          if (value) item.entity = value;
-          else delete item.entity;
+          delete item.entity;
+          if (value) item.entity_id = value;
+          else delete item.entity_id;
         },
         event: 'input',
       }),
@@ -2420,13 +2421,14 @@ export async function bootEditor(root, options = {}) {
 
   function bindingsRow(device, kind) {
     const input = h('input', {
-      type: 'text', value: device.entity || '', spellcheck: 'false',
+      type: 'text', value: device.entity_id || device.entity || '', spellcheck: 'false',
       placeholder: kind === 'ac' ? 'climate.entity_id' : 'light.entity_id',
       oninput: (ev) => {
         const value = ev.target.value.trim();
         snapshot(`bindings:${device.id}`);
-        if (value) device.entity = value;
-        else delete device.entity;
+        delete device.entity;
+        if (value) device.entity_id = value;
+        else delete device.entity_id;
         dirty = true;
         validate();
       },

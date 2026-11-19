@@ -20,12 +20,17 @@ const ZOOM_MAX = 1.2;
 const PAN_MARGIN = 1;      // metres the view's centre may go past the edge of the floor
 const PAN_TILT_MIN = 0.35; // keeps a two-finger drag sane when looking almost along the floor
 
-export function createWorld(canvas, config, store, { onHover, onPick, onLevel = () => {}, onView = () => {}, level: firstLevel, background = STAGE_BG }) {
+export function createWorld(canvas, config, store, {
+  onHover, onPick, onLevel = () => {}, onView = () => {}, level: firstLevel,
+  background = STAGE_BG, quality = 'high', controls = true,
+}) {
+  const lowQuality = quality === 'low';
+  const maxDpr = lowQuality ? 1.5 : 2;
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false, powerPreference: 'high-performance' });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, maxDpr));
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.05;
-  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.enabled = !lowQuality;
   renderer.shadowMap.type = THREE.PCFShadowMap;
   renderer.shadowMap.autoUpdate = false; // the model is static: shadow maps are rendered once
 
@@ -156,8 +161,7 @@ export function createWorld(canvas, config, store, { onHover, onPick, onLevel = 
   const target = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, samples: 4 });
   const composer = new EffectComposer(renderer, target);
   composer.addPass(new RenderPass(scene, camera));
-  const bloom = new UnrealBloomPass(new THREE.Vector2(4, 4), 0.34, 0.5, 1.0);
-  composer.addPass(bloom);
+  if (!lowQuality) composer.addPass(new UnrealBloomPass(new THREE.Vector2(4, 4), 0.34, 0.5, 1.0));
   composer.addPass(new OutputPass());
 
   /* ---------- camera rig ---------- */
@@ -323,9 +327,10 @@ export function createWorld(canvas, config, store, { onHover, onPick, onLevel = 
   let hovered = null;
   let drag = null;
 
-  function pick(ev) {
+  // The 3D target at a client point, for cards that do their own gesture handling.
+  function pickAt(clientX, clientY) {
     const r = canvas.getBoundingClientRect();
-    ndc.set(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
+    ndc.set(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1);
     raycaster.setFromCamera(ndc, camera);
     const hits = raycaster.intersectObjects(hitTargets, false);
     if (!hits.length) return null;
@@ -333,6 +338,8 @@ export function createWorld(canvas, config, store, { onHover, onPick, onLevel = 
     const device = hits.find((h) => h.object.userData.kind !== 'room');
     return (device || hits[0]).object.userData;
   }
+
+  function pick(ev) { return pickAt(ev.clientX, ev.clientY); }
 
   function unitOf(t) {
     return t?.kind === 'light' ? lights.get(t.id) : t?.kind === 'ac' ? acs.get(t.id) : null;
@@ -358,151 +365,156 @@ export function createWorld(canvas, config, store, { onHover, onPick, onLevel = 
     wake();
   }
 
-  // Two fingers move the model and pinch to zoom, keeping what is under them under them.
-  // A mouse moves it the same way, with the right or middle button or Shift held.
+  // Camera interaction state. It stays declared even when controls are off, because the
+  // animation loop reads pinch/magnify/wheelUntil.
   const fingers = new Map();
   let pinch = null;
   let magnify = null;  // a trackpad's pinch
   let wheelMode = null;
   let wheelAt = 0;
   let wheelUntil = 0;
-  const pair = () => {
-    const [a, b = a] = fingers.values();
-    return [a, b];
-  };
-  const spread = () => {
-    const [a, b] = pair();
-    return Math.max(1, Math.hypot(a.x - b.x, a.y - b.y));
-  };
-  // A point of the window, in pixels off the centre of the view.
-  const offCentre = (x, y) => {
-    const r = canvas.getBoundingClientRect();
-    return { x: x - r.left - width / 2, y: y - r.top - height / 2 - (topInset - bottomInset) / 2 };
-  };
-  const between = () => {
-    const [a, b] = pair();
-    return offCentre((a.x + b.x) / 2, (a.y + b.y) / 2);
-  };
-  // The spot on the floor at a point off the centre, and moving the view to put it back there.
-  const spotAt = (m) => {
-    const off = floorOffset(m.x, m.y, rig.goal.dist);
-    return { x: rig.goal.target.x + off.x, z: rig.goal.target.z + off.z };
-  };
-  function holdSpot(spot, m) {
-    const off = floorOffset(m.x, m.y, rig.goal.dist);
-    rig.pan.set(spot.x - off.x - rig.framed.x, 0, spot.z - off.z - rig.framed.z);
-    frameGoal();
-    userMoved();
-    wake();
-  }
-  function zoomTo(zoom, spot, m) {
-    rig.zoom = clamp(zoom, ZOOM_MIN, ZOOM_MAX);
-    frameGoal();
-    holdSpot(spot, m);
-  }
-  function startPinch() {
-    pinch = { fingers: Math.min(2, fingers.size), spread: spread(), zoom: rig.zoom, spot: spotAt(between()) };
-  }
-  const movePinch = () => zoomTo(pinch.zoom * pinch.spread / spread(), pinch.spot, between());
 
-  canvas.addEventListener('pointerdown', (ev) => {
-    canvas.setPointerCapture(ev.pointerId);
-    fingers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
-    const mouseMoves = ev.pointerType === 'mouse' && (ev.button === 1 || ev.button === 2 || ev.shiftKey);
-    if (fingers.size === 2 || mouseMoves) {
-      startPinch();
-      drag = null;
-      setHover(null);
-      if (mouseMoves) canvas.style.cursor = 'grabbing';
-      return;
+  if (controls) {
+    // Two fingers move the model and pinch to zoom, keeping what is under them under them.
+    // A mouse moves it the same way, with the right or middle button or Shift held.
+    const pair = () => {
+      const [a, b = a] = fingers.values();
+      return [a, b];
+    };
+    const spread = () => {
+      const [a, b] = pair();
+      return Math.max(1, Math.hypot(a.x - b.x, a.y - b.y));
+    };
+    // A point of the window, in pixels off the centre of the view.
+    const offCentre = (x, y) => {
+      const r = canvas.getBoundingClientRect();
+      return { x: x - r.left - width / 2, y: y - r.top - height / 2 - (topInset - bottomInset) / 2 };
+    };
+    const between = () => {
+      const [a, b] = pair();
+      return offCentre((a.x + b.x) / 2, (a.y + b.y) / 2);
+    };
+    // The spot on the floor at a point off the centre, and moving the view to put it back there.
+    const spotAt = (m) => {
+      const off = floorOffset(m.x, m.y, rig.goal.dist);
+      return { x: rig.goal.target.x + off.x, z: rig.goal.target.z + off.z };
+    };
+    function holdSpot(spot, m) {
+      const off = floorOffset(m.x, m.y, rig.goal.dist);
+      rig.pan.set(spot.x - off.x - rig.framed.x, 0, spot.z - off.z - rig.framed.z);
+      frameGoal();
+      userMoved();
+      wake();
     }
-    if (fingers.size > 2) return;
-    drag = { x: ev.clientX, y: ev.clientY, az: rig.goal.az, el: rig.goal.el, moved: false };
-  });
-  canvas.addEventListener('pointermove', (ev) => {
-    if (fingers.has(ev.pointerId)) fingers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
-    if (pinch) {
-      if (fingers.size >= pinch.fingers) movePinch();
-      return;
+    function zoomTo(zoom, spot, m) {
+      rig.zoom = clamp(zoom, ZOOM_MIN, ZOOM_MAX);
+      frameGoal();
+      holdSpot(spot, m);
     }
-    if (drag) {
-      const dx = ev.clientX - drag.x;
-      const dy = ev.clientY - drag.y;
-      if (!drag.moved && Math.hypot(dx, dy) > 5) { drag.moved = true; setHover(null); canvas.style.cursor = 'grabbing'; }
-      if (drag.moved) {
-        rig.goal.az = drag.az - dx * 0.35;
-        rig.goal.el = clamp(drag.el + dy * 0.3, EL_MIN, EL_MAX);
-        frameGoal();
-        userMoved();
-        wake();
+    function startPinch() {
+      pinch = { fingers: Math.min(2, fingers.size), spread: spread(), zoom: rig.zoom, spot: spotAt(between()) };
+    }
+    const movePinch = () => zoomTo(pinch.zoom * pinch.spread / spread(), pinch.spot, between());
+
+    canvas.addEventListener('pointerdown', (ev) => {
+      canvas.setPointerCapture(ev.pointerId);
+      fingers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+      const mouseMoves = ev.pointerType === 'mouse' && (ev.button === 1 || ev.button === 2 || ev.shiftKey);
+      if (fingers.size === 2 || mouseMoves) {
+        startPinch();
+        drag = null;
+        setHover(null);
+        if (mouseMoves) canvas.style.cursor = 'grabbing';
+        return;
       }
-      return;
-    }
-    setHover(pick(ev));
-  });
-  const release = (ev) => {
-    fingers.delete(ev.pointerId);
-    if (pinch) { // lifting after a pinch picks nothing
+      if (fingers.size > 2) return;
+      drag = { x: ev.clientX, y: ev.clientY, az: rig.goal.az, el: rig.goal.el, moved: false };
+    });
+    canvas.addEventListener('pointermove', (ev) => {
+      if (fingers.has(ev.pointerId)) fingers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+      if (pinch) {
+        if (fingers.size >= pinch.fingers) movePinch();
+        return;
+      }
+      if (drag) {
+        const dx = ev.clientX - drag.x;
+        const dy = ev.clientY - drag.y;
+        if (!drag.moved && Math.hypot(dx, dy) > 5) { drag.moved = true; setHover(null); canvas.style.cursor = 'grabbing'; }
+        if (drag.moved) {
+          rig.goal.az = drag.az - dx * 0.35;
+          rig.goal.el = clamp(drag.el + dy * 0.3, EL_MIN, EL_MAX);
+          frameGoal();
+          userMoved();
+          wake();
+        }
+        return;
+      }
+      setHover(pick(ev));
+    });
+    const release = (ev) => {
+      fingers.delete(ev.pointerId);
+      if (pinch) { // lifting after a pinch picks nothing
+        if (!fingers.size) { pinch = null; canvas.style.cursor = 'grab'; }
+        else if (fingers.size >= 2) startPinch();
+        return;
+      }
+      if (!drag) return;
+      const wasDrag = drag.moved;
+      drag = null;
+      canvas.style.cursor = 'grab';
+      if (wasDrag) return;
+      const t = pick(ev);
+      if (!t) { onPick(null); return; }
+      if (t.kind === 'light') lights.get(t.id).bump();
+      onPick(t);
+      wake();
+    };
+    canvas.addEventListener('pointerup', release);
+    canvas.addEventListener('pointercancel', (ev) => {
+      fingers.delete(ev.pointerId);
       if (!fingers.size) { pinch = null; canvas.style.cursor = 'grab'; }
-      else if (fingers.size >= 2) startPinch();
-      return;
-    }
-    if (!drag) return;
-    const wasDrag = drag.moved;
-    drag = null;
-    canvas.style.cursor = 'grab';
-    if (wasDrag) return;
-    const t = pick(ev);
-    if (!t) { onPick(null); return; }
-    if (t.kind === 'light') lights.get(t.id).bump();
-    onPick(t);
-    wake();
-  };
-  canvas.addEventListener('pointerup', release);
-  canvas.addEventListener('pointercancel', (ev) => {
-    fingers.delete(ev.pointerId);
-    if (!fingers.size) { pinch = null; canvas.style.cursor = 'grab'; }
-    else if (pinch && fingers.size >= 2) startPinch();
-    drag = null;
-  });
-  canvas.addEventListener('contextmenu', (ev) => ev.preventDefault());
-  canvas.addEventListener('pointerleave', () => { if (!drag) setHover(null); });
-  // Two fingers on a trackpad move the model. A mouse wheel, which clicks by whole notches,
-  // zooms, and so does ⌘ / Ctrl with either. One burst of scrolling is all one or the other.
-  canvas.addEventListener('wheel', (ev) => {
-    ev.preventDefault();
-    const held = ev.ctrlKey || ev.metaKey;
-    const notch = ev.deltaMode === 1 || (ev.deltaX === 0 && ev.wheelDeltaY !== 0 && ev.wheelDeltaY % 120 === 0);
-    if (ev.timeStamp - wheelAt > 160) wheelMode = notch ? 'zoom' : 'pan';
-    wheelAt = ev.timeStamp;
-    wheelUntil = performance.now() + 200;
-    const unit = ev.deltaMode === 1 ? 16 : 1;
-    if (held || wheelMode === 'zoom') {
+      else if (pinch && fingers.size >= 2) startPinch();
+      drag = null;
+    });
+    canvas.addEventListener('contextmenu', (ev) => ev.preventDefault());
+    canvas.addEventListener('pointerleave', () => { if (!drag) setHover(null); });
+    // Two fingers on a trackpad move the model. A mouse wheel, which clicks by whole notches,
+    // zooms, and so does ⌘ / Ctrl with either. One burst of scrolling is all one or the other.
+    canvas.addEventListener('wheel', (ev) => {
+      ev.preventDefault();
+      const held = ev.ctrlKey || ev.metaKey;
+      const notch = ev.deltaMode === 1 || (ev.deltaX === 0 && ev.wheelDeltaY !== 0 && ev.wheelDeltaY % 120 === 0);
+      if (ev.timeStamp - wheelAt > 160) wheelMode = notch ? 'zoom' : 'pan';
+      wheelAt = ev.timeStamp;
+      wheelUntil = performance.now() + 200;
+      const unit = ev.deltaMode === 1 ? 16 : 1;
+      if (held || wheelMode === 'zoom') {
+        const m = offCentre(ev.clientX, ev.clientY);
+        zoomTo(rig.zoom * Math.exp(ev.deltaY * unit * (held ? 0.0075 : 0.0015)), spotAt(m), m);
+        return;
+      }
+      const off = floorOffset(ev.deltaX * unit, ev.deltaY * unit, rig.goal.dist);
+      rig.pan.x += off.x;
+      rig.pan.z += off.z;
+      frameGoal();
+      userMoved();
+      wake();
+    }, { passive: false });
+    // A pinch on a trackpad (Safari's and WKWebView's own events; a finger pinch never gets here).
+    canvas.addEventListener('gesturestart', (ev) => {
+      if (fingers.size) return;
+      ev.preventDefault();
       const m = offCentre(ev.clientX, ev.clientY);
-      zoomTo(rig.zoom * Math.exp(ev.deltaY * unit * (held ? 0.0075 : 0.0015)), spotAt(m), m);
-      return;
-    }
-    const off = floorOffset(ev.deltaX * unit, ev.deltaY * unit, rig.goal.dist);
-    rig.pan.x += off.x;
-    rig.pan.z += off.z;
-    frameGoal();
-    userMoved();
-    wake();
-  }, { passive: false });
-  // A pinch on a trackpad (Safari's and WKWebView's own events; a finger pinch never gets here).
-  canvas.addEventListener('gesturestart', (ev) => {
-    if (fingers.size) return;
-    ev.preventDefault();
-    const m = offCentre(ev.clientX, ev.clientY);
-    magnify = { zoom: rig.zoom, spot: spotAt(m), m };
-  });
-  canvas.addEventListener('gesturechange', (ev) => {
-    if (!magnify) return;
-    ev.preventDefault();
-    zoomTo(magnify.zoom / ev.scale, magnify.spot, magnify.m);
-  });
-  canvas.addEventListener('gestureend', () => { magnify = null; });
-  canvas.style.cursor = 'grab';
+      magnify = { zoom: rig.zoom, spot: spotAt(m), m };
+    });
+    canvas.addEventListener('gesturechange', (ev) => {
+      if (!magnify) return;
+      ev.preventDefault();
+      zoomTo(magnify.zoom / ev.scale, magnify.spot, magnify.m);
+    });
+    canvas.addEventListener('gestureend', () => { magnify = null; });
+    canvas.style.cursor = 'grab';
+  }
 
   /* ---------- loop ---------- */
 
@@ -546,7 +558,7 @@ export function createWorld(canvas, config, store, { onHover, onPick, onLevel = 
     if (!r.width || !r.height) return;
     width = r.width;
     height = r.height;
-    const pr = Math.min(window.devicePixelRatio || 1, 2);
+    const pr = Math.min(window.devicePixelRatio || 1, maxDpr);
     renderer.setPixelRatio(pr);
     renderer.setSize(width, height, false);
     composer.setPixelRatio(pr);
@@ -562,6 +574,9 @@ export function createWorld(canvas, config, store, { onHover, onPick, onLevel = 
   const world = {
     lights,
     acs,
+
+    // The scene object at a client point (a lamp, an AC or a room floor).
+    pickAt,
 
     setInsets(top, bottom) { topInset = top; bottomInset = bottom; resize(); },
     resize,

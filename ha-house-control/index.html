@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <title>House Control card</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #05070c; }
+      house-control-card { display: block; width: 100%; height: 100%; }
+      #log {
+        position: fixed; left: 10px; bottom: 10px; z-index: 9; max-width: 60vw;
+        margin: 0; padding: 6px 8px; border-radius: 8px; pointer-events: none;
+        color: #9fe6b0; background: rgba(0, 0, 0, 0.65); font: 11px/1.4 ui-monospace, monospace;
+        white-space: pre-wrap;
+      }
+    </style>
+  </head>
+  <body>
+    <house-control-card id="card"></house-control-card>
+    <pre id="log">waiting…</pre>
+    <script type="module" src="/src/dev.js"></script>
+  </body>
+</html>

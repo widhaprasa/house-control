@@ -12,7 +12,7 @@ and double-tap actions on lamps, ACs and rooms.
 
 - Web only.
 - A normal Lovelace card; in a **panel view** it fills the panel.
-- No `background` mode, no card-mod code, no theme, no child cards.
+- No fixed/full-screen `background: true` layout, no card-mod code, no theme, no child cards.
 - Camera: drag to orbit, wheel/two-finger to pan, pinch/⌘-scroll to zoom, like the app.
 - The plan is loaded once per card load.
 - Ship a single JS bundle; no HACS packaging.
@@ -42,6 +42,7 @@ field is edited.
 type: custom:house-control-card
 plan_url: /local/house-control/plan.json   # or inline plan: {...}
 quality: low                               # low | high
+# background: transparent                 # or a CSS color; default #0a0e1a
 
 # Actions per plan device id; add only the gestures you want
 devices:
@@ -74,6 +75,7 @@ rooms:
 ```
 
 - There are no default actions. A lamp, AC or room without a `tap_action` does nothing on tap; hold/double still work when configured.
+- Optional `background` is a CSS color or `transparent` to show the Home Assistant card/page behind the stage; default `#0a0e1a`.
 - Optional `level` sets the initial floor id; otherwise the floor last chosen on this plan name is restored, then the first floor.
 - For development, `plan` can hold the plan object inline instead of `plan_url`.
 - `rooms.<id>` configures that room's actions. There is no global room action.
@@ -208,7 +210,7 @@ migrated when edited). The Bindings dialog and duplicate/export logic use the sa
 
 ## Out of scope for v1
 
-- `background: true`, fixed positioning, transparent themes, card-mod integration.
+- `background: true` full-screen layout, fixed positioning, theme-specific styling, card-mod integration.
 - Child cards inside the 3D card.
 - `more-info`, `url` and `navigate` actions.
 - Room entity ids in the plan/editor.
@@ -218,6 +220,7 @@ migrated when edited). The Bindings dialog and duplicate/export logic use the sa
 ## Acceptance tests
 
 - Card loads a plan from `/local/...` in a panel view and fills the panel.
+- `background: transparent` shows the HA card/page behind the stage; a color sets the stage background.
 - Rounded and diagonal rooms render.
 - Lamps/ACs reflect Home Assistant state changes.
 - Tap, hold and double tap run their configured action (`fire-dom-event`, `toggle`, `turn_on`, `turn_off` or `call-service`).

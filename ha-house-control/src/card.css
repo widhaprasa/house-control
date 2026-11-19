@@ -12,7 +12,7 @@
   min-height: 320px;
   overflow: hidden;
   border-radius: var(--ha-card-border-radius, 12px);
-  background: #0a0e1a;
+  background: var(--hc-background, #0a0e1a);
   color: var(--primary-text-color, #e8ecf6);
   font-family: var(--paper-font-body1_-_font-family, system-ui, sans-serif);
   user-select: none;

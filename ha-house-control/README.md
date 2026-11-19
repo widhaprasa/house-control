@@ -27,6 +27,7 @@ The bundle is `dist/house-control-card.js`.
 type: custom:house-control-card
 plan_url: /local/house-control/plan.json
 quality: low
+# background: transparent   # default #0a0e1a; transparent follows the HA card
 
 devices:
   living.main:
@@ -48,6 +49,18 @@ rooms:
         room: living
 ```
 
+
+## Background
+
+The 3D stage is `#0a0e1a` by default. Set `background: transparent` to let the Home
+Assistant card/page background show through, or use any CSS color:
+
+```yaml
+background: transparent
+```
+
+This is the card stage color, not Lovelace's `background: true` layout option. The
+dashboard background itself comes from your Home Assistant theme/dashboard.
 
 ## Generate the card config from a plan
 
@@ -137,6 +150,7 @@ npm run dev
 
 The dev page uses `dev/demo-plan.json` (a two-floor demo with rounded rooms), mock Home
 Assistant states, and logs `ll-custom` events at the bottom. Open `/?test` to run the
-self-check (canvas, floor switcher, tap/hold/double, direct actions, floor change).
+self-check (canvas, floor switcher, tap/hold/double, direct actions, floor change), or
+`/?transparent` to preview a transparent stage.
 
 `plan.json` fields for lamps and ACs are `entity_id`; rooms have no entity.

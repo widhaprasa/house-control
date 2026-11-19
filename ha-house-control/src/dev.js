@@ -64,7 +64,14 @@ for (const room of plan.rooms) {
   };
 }
 
-const config = { plan_url: '/dev/demo-plan.json', quality: 'low', devices, rooms };
+const params = new URLSearchParams(location.search);
+const config = {
+  plan_url: '/dev/demo-plan.json',
+  quality: 'low',
+  devices,
+  rooms,
+  ...(params.has('transparent') ? { background: 'transparent' } : {}),
+};
 card.setConfig(config);
 const serviceCalls = [];
 window.__serviceCalls = serviceCalls;
@@ -172,6 +179,7 @@ if (new URLSearchParams(location.search).has('test')) {
     const error = root?.querySelector('.hc-error');
     window.__houseCheck = {
       canvas: !!canvas,
+      background: root ? getComputedStyle(root.querySelector('.hc-card')).backgroundColor : null,
       width: canvas?.clientWidth || 0,
       height: canvas?.clientHeight || 0,
       floors,

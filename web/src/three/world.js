@@ -25,11 +25,13 @@ export function createWorld(canvas, config, store, {
   background = STAGE_BG, quality = 'high', controls = true,
 }) {
   const lowQuality = quality === 'low';
+  const transparent = background === null || background === 'transparent' || background === 'none';
   const maxDpr = lowQuality ? 1.5 : 2;
   const renderer = new THREE.WebGLRenderer({
-    canvas, antialias: false, alpha: false, powerPreference: 'high-performance',
+    canvas, antialias: false, alpha: transparent, powerPreference: 'high-performance',
   });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, maxDpr));
+  renderer.setClearColor(0x000000, transparent ? 0 : 1);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.05;
   renderer.shadowMap.enabled = !lowQuality;
@@ -37,7 +39,7 @@ export function createWorld(canvas, config, store, {
   renderer.shadowMap.autoUpdate = false; // the model is static: shadow maps are rendered once
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(background);
+  scene.background = transparent ? null : new THREE.Color(background);
 
   const camera = new THREE.PerspectiveCamera(24, 1, 0.5, 120);
 

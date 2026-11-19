@@ -99,6 +99,7 @@ class HouseControlCard extends HTMLElement {
     if (!this.isConnected || !this._config) return;
     this._teardown();
     this._worldFailed = false;
+    this._applyBackground();
     const token = this._token;
     this._showLoading(true);
 
@@ -139,7 +140,7 @@ class HouseControlCard extends HTMLElement {
       this._world = createWorld(this._canvas, this._plan, this._store, {
         level: this._level,
         quality: QUALITY.has(this._config.quality) ? this._config.quality : 'low',
-        background: STAGE_BG,
+        background: this._stageBackground(),
         onHover: () => {},
         onPick: () => {},
         onLevel: (id) => { this._level = id; this._updateFloors(); },
@@ -230,6 +231,16 @@ class HouseControlCard extends HTMLElement {
   _applyRunning() {
     if (!this._world) return;
     this._world.setRunning(this._visible !== false && !document.hidden);
+  }
+
+  _stageBackground() {
+    const value = this._config?.background;
+    if (value === 'transparent' || value === 'none') return null;
+    return typeof value === 'string' && value ? value : STAGE_BG;
+  }
+
+  _applyBackground() {
+    this._root.style.setProperty('--hc-background', this._stageBackground() || 'transparent');
   }
 
   _initialLevel(plan) {

@@ -132,6 +132,8 @@ tap_action:
   for that window.
 - Lamps and ACs win over room floors when both are under the pointer.
 - A drag moves the camera; a gesture only fires when the pointer stays within about 5 px.
+- Double-click or double-tap empty space outside the home (no room, lamp or AC under the
+  pointer) resets the camera to the plan's default view. One empty tap does nothing.
 
 ## State mapping
 
@@ -226,6 +228,7 @@ migrated when edited). The Bindings dialog and duplicate/export logic use the sa
 - Tap, hold and double tap run their configured action (`fire-dom-event`, `toggle`, `turn_on`, `turn_off` or `call-service`).
 - Per-device and per-room actions fire correctly.
 - A target without `tap_action` does nothing on tap; actions fire only when configured.
+- Double-click/tap outside the home resets a moved camera; single empty taps do nothing; target double-tap actions still fire.
 - A `popup_menu` listener receives the user's manually inserted `entity_id`.
 - Direct `toggle` (including climate on/off) and `call-service` actions call the right service.
 - Room taps fire the room action; rooms without config do nothing.

@@ -42,6 +42,7 @@ class HouseControlCard extends HTMLElement {
     this._gesture = null;
     this._gestures = false;
     this._lastTap = null;
+    this._lastBackgroundTap = 0;
     this._tapTimer = 0;
     this._fetchController = null;
     this._fetchTimer = 0;
@@ -191,6 +192,7 @@ class HouseControlCard extends HTMLElement {
     this._canvas.removeEventListener('webglcontextlost', this._onContextLost, false);
     this._detachGestures();
     this._clearPendingTap();
+    this._lastBackgroundTap = 0;
     this._cancelGesture();
 
     this._unsub?.();
@@ -376,7 +378,7 @@ class HouseControlCard extends HTMLElement {
     if (!gesture) return;
     this._clearLong(gesture);
     if (Math.hypot(ev.clientX - gesture.x, ev.clientY - gesture.y) > DRAG_LIMIT) gesture.moved = true;
-    if (gesture.moved || gesture.long || !gesture.target) return;
+    if (gesture.moved || gesture.long) return;
     this._handleTap(gesture.target);
   }
 
@@ -397,6 +399,12 @@ class HouseControlCard extends HTMLElement {
   }
 
   _handleTap(target) {
+    if (!target) {
+      this._handleBackgroundTap();
+      return;
+    }
+    this._lastBackgroundTap = 0;
+
     const actions = this._actionsFor(target);
     const tapAction = actions?.tap_action ?? null;
 
@@ -422,6 +430,18 @@ class HouseControlCard extends HTMLElement {
       this._lastTap = null;
       if (tapAction) this._fire(tapAction, target);
     }, DOUBLE_TAP);
+  }
+
+  _handleBackgroundTap() {
+    const now = performance.now();
+    const last = this._lastBackgroundTap;
+    this._clearPendingTap();
+    if (last && now - last <= DOUBLE_TAP) {
+      this._lastBackgroundTap = 0;
+      this._world?.resetView();
+      return;
+    }
+    this._lastBackgroundTap = now;
   }
 
   _clearPendingTap() {

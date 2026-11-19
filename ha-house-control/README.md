@@ -140,7 +140,8 @@ For `fire-dom-event`, no `entity_id` or target is added automatically; add it yo
 
 Gestures: `tap_action`, `hold_action` (about 500 ms), `double_tap_action` (about 300 ms;
 the single tap waits for the double window). The 3D stage keeps the app's camera: drag to
-orbit, wheel or two fingers to pan, pinch or ⌘-scroll to zoom.
+orbit, wheel or two fingers to pan, pinch or ⌘-scroll to zoom. Double-click or double-tap
+empty space outside the home to reset the camera to the plan's default view.
 
 ## Development
 
@@ -150,7 +151,7 @@ npm run dev
 
 The dev page uses `dev/demo-plan.json` (a two-floor demo with rounded rooms), mock Home
 Assistant states, and logs `ll-custom` events at the bottom. Open `/?test` to run the
-self-check (canvas, floor switcher, tap/hold/double, direct actions, floor change), or
+self-check (canvas, floor switcher, tap/hold/double, direct actions, camera reset, floor change), or
 `/?transparent` to preview a transparent stage.
 
 `plan.json` fields for lamps and ACs are `entity_id`; rooms have no entity.

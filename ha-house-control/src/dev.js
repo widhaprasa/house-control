@@ -111,6 +111,17 @@ if (new URLSearchParams(location.search).has('test')) {
     return null;
   }
 
+  function findEmpty() {
+    const canvas = card.shadowRoot.querySelector('.hc-canvas');
+    const rect = canvas.getBoundingClientRect();
+    for (let y = rect.top + 10; y < rect.bottom - 10; y += 10) {
+      for (let x = rect.left + 10; x < rect.right - 10; x += 10) {
+        if (!card._world?.pickAt(x, y)) return { x, y };
+      }
+    }
+    return null;
+  }
+
   function send(hit, type, extra = {}) {
     const canvas = card.shadowRoot.querySelector('.hc-canvas');
     return canvas.dispatchEvent(new PointerEvent(type, {
@@ -169,6 +180,37 @@ if (new URLSearchParams(location.search).has('test')) {
   }, 5200);
 
   setTimeout(() => {
+    window.__resetCalls = 0;
+    const world = card._world;
+    if (world) {
+      const reset = world.resetView.bind(world);
+      world.resetView = () => { window.__resetCalls += 1; reset(); };
+    }
+    // Move the camera away from its default so a reset is observable.
+    const canvas = card.shadowRoot.querySelector('.hc-canvas');
+    const rect = canvas.getBoundingClientRect();
+    canvas.dispatchEvent(new WheelEvent('wheel', {
+      bubbles: true, cancelable: true, deltaY: -160,
+      clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2,
+    }));
+  }, 5400);
+
+  setTimeout(() => {
+    window.__emptyPoint = findEmpty();
+    if (!window.__emptyPoint) return;
+    send(window.__emptyPoint, 'pointerdown');
+    send(window.__emptyPoint, 'pointerup');
+    setTimeout(() => { window.__singleReset = window.__resetCalls || 0; }, 50);
+  }, 5520);
+
+  setTimeout(() => {
+    if (!window.__emptyPoint) return;
+    send(window.__emptyPoint, 'pointerdown');
+    send(window.__emptyPoint, 'pointerup');
+    setTimeout(() => { window.__doubleReset = window.__resetCalls || 0; }, 300);
+  }, 5640);
+
+  setTimeout(() => {
     const root = card.shadowRoot;
     const canvas = root?.querySelector('.hc-canvas');
     const floors = [...(root?.querySelectorAll('.hc-floor') || [])].map((b) => ({
@@ -189,10 +231,12 @@ if (new URLSearchParams(location.search).has('test')) {
       floorSwitched: window.__floorSwitched || null,
       holdEvent: window.__holdEvent || null,
       doubleEvent: window.__doubleEvent || null,
+      singleReset: window.__singleReset ?? null,
+      doubleReset: window.__doubleReset ?? null,
       error: error && !error.hidden ? error.textContent : null,
       serviceCalls: window.__serviceCalls || [],
       lastEvent: window.__lastEvent || null,
     };
     log.textContent = JSON.stringify(window.__houseCheck);
-  }, 6000);
+  }, 6200);
 }

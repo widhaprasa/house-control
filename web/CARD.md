@@ -40,8 +40,9 @@ field is edited.
 
 ```yaml
 type: custom:house-control-card
-plan_url: /local/house-control/plan.json   # or inline plan: {...}
+plan: /local/house-control/plan.json       # URL or inline plan: {...}
 quality: low                               # low | high
+tooltip: true                              # hover name/status for lamps and ACs
 # background: transparent                 # or a CSS color; default #0a0e1a
 
 # Actions per plan device id; add only the gestures you want
@@ -76,8 +77,9 @@ rooms:
 
 - There are no default actions. A lamp, AC or room without a `tap_action` does nothing on tap; hold/double still work when configured.
 - Optional `background` is a CSS color or `transparent` to show the Home Assistant card/page behind the stage; default `#0a0e1a`.
+- Optional `tooltip` defaults to `true`; set it to `false` to disable the lamp/AC hover label.
 - Optional `level` sets the initial floor id; otherwise the floor last chosen on this plan name is restored, then the first floor.
-- For development, `plan` can hold the plan object inline instead of `plan_url`.
+- `plan` can be a URL or the plan object inline.
 - `rooms.<id>` configures that room's actions. There is no global room action.
 - Keys are plan ids, not HA entity ids.
 
@@ -134,6 +136,8 @@ tap_action:
 - A drag moves the camera; a gesture only fires when the pointer stays within about 5 px.
 - Double-click or double-tap empty space outside the home (no room, lamp or AC under the
   pointer) resets the camera to the plan's default view. One empty tap does nothing.
+- Hovering a lamp or AC shows a tooltip with its name and status; moving off the device
+  hides it. Hover is desktop-only.
 
 ## State mapping
 
@@ -181,11 +185,11 @@ Recommended: remember the last floor per plan in `localStorage`.
 
 ## Plan loading
 
-- `fetch(plan_url)` with no-store caching and a timeout.
+- `fetch(plan)` for a URL, with no-store caching and a timeout.
 - Relative URLs resolve against the Home Assistant origin (`/local/...` works).
 - External URLs need CORS and HTTPS.
 - Validate with `normalize`; show a card error with a Reload page button on failure.
-- Inline `plan:` is an optional fallback for testing.
+- `plan` may also be an inline plan object for testing.
 - Load once; reload the dashboard to pick up a changed plan.
 
 ## Build and install
@@ -229,6 +233,7 @@ migrated when edited). The Bindings dialog and duplicate/export logic use the sa
 - Per-device and per-room actions fire correctly.
 - A target without `tap_action` does nothing on tap; actions fire only when configured.
 - Double-click/tap outside the home resets a moved camera; single empty taps do nothing; target double-tap actions still fire.
+- Hovering a lamp/AC shows its name/status; leaving hides the tooltip; `tooltip: false` disables it.
 - A `popup_menu` listener receives the user's manually inserted `entity_id`.
 - Direct `toggle` (including climate on/off) and `call-service` actions call the right service.
 - Room taps fire the room action; rooms without config do nothing.

@@ -66,11 +66,12 @@ for (const room of plan.rooms) {
 
 const params = new URLSearchParams(location.search);
 const config = {
-  plan_url: '/dev/demo-plan.json',
+  plan: '/dev/demo-plan.json',
   quality: 'low',
   devices,
   rooms,
   ...(params.has('transparent') ? { background: 'transparent' } : {}),
+  ...(params.get('tooltip') === 'false' ? { tooltip: false } : {}),
 };
 card.setConfig(config);
 const serviceCalls = [];
@@ -97,6 +98,29 @@ if (new URLSearchParams(location.search).has('test')) {
   setTimeout(() => {
     card._fire?.({ action: 'fire-dom-event', popup_menu: { test: true } });
   }, 3000);
+
+  setTimeout(() => {
+    const hit = findTarget('light');
+    if (hit) send(hit, 'pointermove');
+    setTimeout(() => {
+      const tip = card.shadowRoot.querySelector('.hc-tooltip');
+      window.__tooltip = {
+        show: tip?.classList.contains('show') || false,
+        visible: tip ? getComputedStyle(tip).display !== 'none' : false,
+        name: tip?.querySelector('.hc-name')?.textContent || '',
+        status: tip?.querySelector('.hc-status')?.textContent || '',
+      };
+    }, 200);
+  }, 3000);
+
+  setTimeout(() => {
+    const empty = findEmpty();
+    if (empty) send(empty, 'pointermove');
+    setTimeout(() => {
+      const tip = card.shadowRoot.querySelector('.hc-tooltip');
+      window.__tooltipHidden = tip ? !tip.classList.contains('show') : null;
+    }, 200);
+  }, 3500);
 
   // Find a real 3D target and send a pointer tap through the card's gesture handler.
   function findTarget(kind) {
@@ -231,6 +255,8 @@ if (new URLSearchParams(location.search).has('test')) {
       floorSwitched: window.__floorSwitched || null,
       holdEvent: window.__holdEvent || null,
       doubleEvent: window.__doubleEvent || null,
+      tooltip: window.__tooltip || null,
+      tooltipHidden: window.__tooltipHidden ?? null,
       singleReset: window.__singleReset ?? null,
       doubleReset: window.__doubleReset ?? null,
       error: error && !error.hidden ? error.textContent : null,

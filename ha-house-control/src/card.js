@@ -10,6 +10,8 @@ const LONG_PRESS = 500;
 const DOUBLE_TAP = 300;
 const DRAG_LIMIT = 5;
 const STAGE_BG = '#0a0e1a';
+const MODE_LABEL = { cool: 'Cool', heat: 'Heat', dry: 'Dry', fan: 'Fan', auto: 'Auto' };
+const MODE_COLORS = { cool: '#5db2ff', heat: '#ff8c3a', dry: '#62e0cf', fan: '#cfdcff', auto: '#9bd28a' };
 
 class HouseControlCard extends HTMLElement {
   constructor() {
@@ -22,6 +24,11 @@ class HouseControlCard extends HTMLElement {
         <div class="hc-loading">Loading the home…</div>
         <div class="hc-error" hidden></div>
         <div class="hc-floors" hidden></div>
+        <div class="hc-tooltip" aria-hidden="true">
+          <i class="hc-dot"></i>
+          <span class="hc-name"></span>
+          <span class="hc-status"></span>
+        </div>
       </div>`;
 
     this._root = this.shadowRoot.querySelector('.hc-card');
@@ -29,6 +36,9 @@ class HouseControlCard extends HTMLElement {
     this._loading = this.shadowRoot.querySelector('.hc-loading');
     this._error = this.shadowRoot.querySelector('.hc-error');
     this._floors = this.shadowRoot.querySelector('.hc-floors');
+    this._tooltip = this.shadowRoot.querySelector('.hc-tooltip');
+    this._tooltipName = this.shadowRoot.querySelector('.hc-name');
+    this._tooltipStatus = this.shadowRoot.querySelector('.hc-status');
 
     this._config = null;
     this._hass = null;
@@ -61,14 +71,15 @@ class HouseControlCard extends HTMLElement {
   }
 
   static getStubConfig() {
-    return { plan_url: '/local/house-control/plan.json', quality: 'low', devices: {}, rooms: {} };
+    return { plan: '/local/house-control/plan.json', quality: 'low', tooltip: true, devices: {}, rooms: {} };
   }
 
   setConfig(config) {
-    if (!config || (!config.plan_url && !config.plan)) {
-      throw new Error('house-control-card needs "plan_url" (or an inline "plan")');
+    const plan = config?.plan;
+    if (!plan || (typeof plan !== 'string' && typeof plan !== 'object')) {
+      throw new Error('house-control-card needs "plan" (a URL or an inline plan object)');
     }
-    this._config = { quality: 'low', devices: {}, rooms: {}, ...config };
+    this._config = { quality: 'low', tooltip: true, devices: {}, rooms: {}, ...config };
     if (this.isConnected) this._start();
     else this._teardown();
   }
@@ -105,9 +116,8 @@ class HouseControlCard extends HTMLElement {
     this._showLoading(true);
 
     try {
-      const raw = this._config.plan
-        ? structuredClone(this._config.plan)
-        : await this._fetchPlan(this._config.plan_url);
+      const source = this._config.plan;
+      const raw = typeof source === 'string' ? await this._fetchPlan(source) : structuredClone(source);
       if (token !== this._token || !this.isConnected) return;
 
       const plan = normalize(raw);
@@ -142,7 +152,7 @@ class HouseControlCard extends HTMLElement {
         level: this._level,
         quality: QUALITY.has(this._config.quality) ? this._config.quality : 'low',
         background: this._stageBackground(),
-        onHover: () => {},
+        onHover: (hit) => this._showTooltip(hit),
         onPick: () => {},
         onLevel: (id) => { this._level = id; this._updateFloors(); },
       });
@@ -157,7 +167,7 @@ class HouseControlCard extends HTMLElement {
   }
 
   async _fetchPlan(url) {
-    if (!url) throw new Error('No plan_url');
+    if (!url) throw new Error('No plan URL');
     const absolute = new URL(url, window.location.origin);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 15000);
@@ -191,6 +201,7 @@ class HouseControlCard extends HTMLElement {
 
     this._canvas.removeEventListener('webglcontextlost', this._onContextLost, false);
     this._detachGestures();
+    this._hideTooltip();
     this._clearPendingTap();
     this._lastBackgroundTap = 0;
     this._cancelGesture();
@@ -232,7 +243,9 @@ class HouseControlCard extends HTMLElement {
 
   _applyRunning() {
     if (!this._world) return;
-    this._world.setRunning(this._visible !== false && !document.hidden);
+    const running = this._visible !== false && !document.hidden;
+    this._world.setRunning(running);
+    if (!running) this._hideTooltip();
   }
 
   _stageBackground() {
@@ -262,6 +275,7 @@ class HouseControlCard extends HTMLElement {
   }
 
   _setLevel(id) {
+    this._hideTooltip();
     this._level = id;
     try { localStorage.setItem(this._levelKey(), id); } catch { /* private mode */ }
     if (this._world) this._world.setLevel(id); // onLevel refreshes the buttons
@@ -309,6 +323,52 @@ class HouseControlCard extends HTMLElement {
       count.textContent = String(n);
       count.classList.toggle('zero', n === 0);
     }
+  }
+
+  _showTooltip(hit) {
+    if (this._config?.tooltip === false || !hit || (hit.kind !== 'light' && hit.kind !== 'ac')
+      || !this._plan || !this._store) {
+      this._hideTooltip();
+      return;
+    }
+    const list = hit.kind === 'light' ? this._plan.lights : this._plan.acs;
+    const cfg = list.find((item) => item.id === hit.id);
+    const state = hit.kind === 'light'
+      ? this._store.state.lights[hit.id]
+      : this._store.state.acs[hit.id];
+    if (!cfg || !state) { this._hideTooltip(); return; }
+
+    let status;
+    let color;
+    let on;
+    if (hit.kind === 'light') {
+      on = state.on;
+      status = !on ? 'Off' : cfg.capabilities?.includes('brightness')
+        ? `${Math.round(state.brightness * 100)}%` : 'On';
+      color = state.color || '#ffbd7a';
+    } else {
+      on = state.on && !state.idle;
+      status = state.on
+        ? `${state.idle ? 'Idle' : (MODE_LABEL[state.mode] || 'Auto')} ${Math.round(state.target)}°`
+        : 'Off';
+      color = MODE_COLORS[state.mode] || MODE_COLORS.auto;
+    }
+
+    this._tooltipName.textContent = cfg.name || hit.id;
+    this._tooltipStatus.textContent = status;
+    this._tooltip.style.setProperty('--hc-tooltip-dot', color);
+    this._tooltip.classList.toggle('on', on);
+    this._tooltip.classList.add('show');
+    this._tooltip.setAttribute('aria-hidden', 'false');
+
+    const width = this._root.clientWidth;
+    this._tooltip.style.left = `${Math.min(Math.max(hit.x, 70), Math.max(70, width - 70))}px`;
+    this._tooltip.style.top = `${Math.max(hit.y, 56)}px`;
+  }
+
+  _hideTooltip() {
+    this._tooltip.classList.remove('show');
+    this._tooltip.setAttribute('aria-hidden', 'true');
   }
 
   /* ---------- taps, holds, double taps ---------- */
@@ -438,6 +498,7 @@ class HouseControlCard extends HTMLElement {
     this._clearPendingTap();
     if (last && now - last <= DOUBLE_TAP) {
       this._lastBackgroundTap = 0;
+      this._hideTooltip();
       this._world?.resetView();
       return;
     }
@@ -515,6 +576,7 @@ class HouseControlCard extends HTMLElement {
   /* ---------- loading and errors ---------- */
 
   _showLoading(show) {
+    if (show) this._hideTooltip();
     this._loading.hidden = !show;
   }
 
@@ -533,6 +595,7 @@ class HouseControlCard extends HTMLElement {
       this._error.replaceChildren();
       return;
     }
+    this._hideTooltip();
     this._loading.hidden = true;
     this._error.hidden = false;
     const text = document.createElement('span');

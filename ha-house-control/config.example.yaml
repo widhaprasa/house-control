@@ -1,6 +1,7 @@
 type: custom:house-control-card
-plan_url: /local/house-control/plan.json
+plan: /local/house-control/plan.json
 quality: low
+tooltip: true
 # background: transparent   # default #0a0e1a; transparent follows the HA card
 
 # Actions exist under devices/rooms. There are no default actions; add tap_action.

@@ -1,5 +1,5 @@
 // Builds a Lovelace card config from a plan JSON. Usage:
-//   node scripts/plan-to-config.mjs path/to/plan.json [--plan-url /local/house-control/plan.json] [--quality low|high] [--no-actions]
+//   node scripts/plan-to-config.mjs path/to/plan.json [--plan /local/house-control/plan.json] [--quality low|high] [--no-actions]
 import fs from 'node:fs';
 
 const args = process.argv.slice(2);
@@ -9,14 +9,14 @@ let quality = 'low';
 let withActions = true;
 
 for (let i = 0; i < args.length; i++) {
-  if (args[i] === '--plan-url') planUrl = args[++i];
+  if (args[i] === '--plan') planUrl = args[++i];
   else if (args[i] === '--quality') quality = args[++i];
   else if (args[i] === '--no-actions') withActions = false;
   else file = args[i];
 }
 
 if (!file) {
-  console.error('Usage: node scripts/plan-to-config.mjs <plan.json> [--plan-url URL] [--quality low|high] [--no-actions]');
+  console.error('Usage: node scripts/plan-to-config.mjs <plan.json> [--plan URL] [--quality low|high] [--no-actions]');
   process.exit(1);
 }
 
@@ -24,7 +24,7 @@ const plan = JSON.parse(fs.readFileSync(file, 'utf8'));
 const q = (value) => JSON.stringify(String(value));
 const lines = [
   'type: custom:house-control-card',
-  `plan_url: ${q(planUrl)}`,
+  `plan: ${q(planUrl)}`,
   `quality: ${q(quality)}`,
 ];
 

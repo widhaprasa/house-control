@@ -25,8 +25,9 @@ The bundle is `dist/house-control-card.js`.
 
 ```yaml
 type: custom:house-control-card
-plan_url: /local/house-control/plan.json
+plan: /local/house-control/plan.json
 quality: low
+tooltip: true
 # background: transparent   # default #0a0e1a; transparent follows the HA card
 
 devices:
@@ -76,9 +77,9 @@ npm run --silent config -- path/to/plan.json > house-control-card.yaml
 
 Options:
 
-- `--plan-url /local/house-control/plan.json` — the URL the card will fetch.
+- `--plan /local/house-control/plan.json` — the URL the card will fetch.
 - `--quality low|high` — defaults to `low`.
-- `--no-actions` — emit only the card header (type, plan URL and quality), without actions.
+- `--no-actions` — emit only the card header (type, plan reference and quality), without actions.
 
 The generated config has per-device and per-room `tap_action` / `hold_action` /
 `double_tap_action` entries, all using `action: fire-dom-event` with a `popup_menu`
@@ -141,7 +142,8 @@ For `fire-dom-event`, no `entity_id` or target is added automatically; add it yo
 Gestures: `tap_action`, `hold_action` (about 500 ms), `double_tap_action` (about 300 ms;
 the single tap waits for the double window). The 3D stage keeps the app's camera: drag to
 orbit, wheel or two fingers to pan, pinch or ⌘-scroll to zoom. Double-click or double-tap
-empty space outside the home to reset the camera to the plan's default view.
+empty space outside the home to reset the camera to the plan's default view. Hover a lamp
+or AC to see its name and status (`tooltip: false` hides it).
 
 ## Development
 
@@ -151,7 +153,7 @@ npm run dev
 
 The dev page uses `dev/demo-plan.json` (a two-floor demo with rounded rooms), mock Home
 Assistant states, and logs `ll-custom` events at the bottom. Open `/?test` to run the
-self-check (canvas, floor switcher, tap/hold/double, direct actions, camera reset, floor change), or
+self-check (canvas, floor switcher, tap/hold/double, direct actions, hover tooltip, camera reset, floor change), or
 `/?transparent` to preview a transparent stage.
 
 `plan.json` fields for lamps and ACs are `entity_id`; rooms have no entity.

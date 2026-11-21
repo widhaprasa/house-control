@@ -433,6 +433,40 @@ const builders = {
     );
   },
 
+  rackServer() {
+    // A server rack: a black cabinet with five rack-mounted servers across the front, each with a status LED.
+    // The parts stand on y = 0; set the appliance's "y" if it should stand higher.
+    const frame = mat('#1d1f24', { rough: 0.5, metal: 0.3 });
+    const unit = mat('#3a3f4a', { rough: 0.4, metal: 0.4 });
+    const lit = mat('#3dd68c', { rough: 0.3, emissive: '#3dd68c', emissiveIntensity: 0.8 });
+    const W = 0.6;
+    const D = 0.8;
+    const H = 1.2;
+    const parts = [at(box(W, H, D, frame, { r: 0.01 }), 0, 0, 0)];
+    for (let i = 0; i < 5; i++) {
+      const y = 0.1 + i * 0.2;
+      parts.push(at(box(W - 0.08, 0.07, 0.02, unit, { r: 0.004 }), 0, y, D / 2 + 0.01));
+      parts.push(at(box(0.012, 0.012, 0.006, lit), W / 2 - 0.07, y + 0.03, D / 2 + 0.022));
+    }
+    return group(parts);
+  },
+
+  printer() {
+    // A desk printer: a white body with a paper tray at the front, a top slot, a control panel and paper on the tray.
+    const body = mat('#eceef2', { rough: 0.45 });
+    const dark = mat('#2a2d35', { rough: 0.4 });
+    const tray = mat('#d6d9de', { rough: 0.5 });
+    const paper = mat('#fbfbf8', { rough: 0.8 });
+    return group(
+      at(box(0.45, 0.2, 0.36, body, { r: 0.02 }), 0, 0, 0), // body
+      at(box(0.4, 0.015, 0.2, dark, { r: 0.004 }), 0, 0.2, -0.02), // top
+      at(box(0.16, 0.005, 0.02, dark, { r: 0.002 }), 0, 0.216, -0.05), // paper slot
+      at(box(0.1, 0.04, 0.006, dark, { r: 0.004 }), 0.13, 0.12, 0.183), // control panel
+      at(box(0.36, 0.015, 0.18, tray, { r: 0.004 }), 0, 0.04, 0.27), // output tray
+      at(box(0.3, 0.03, 0.14, paper, { r: 0.002 }), 0, 0.055, 0.27), // paper on it
+    );
+  },
+
   desk({ width = 1.4 }) {
     const c = chair('#2b2e37');
     c.position.z = 0.5;
@@ -608,7 +642,7 @@ const builders = {
 };
 
 // Appliance-only pieces: they only exist as appliances (linked, clickable, with a status light).
-const APPLIANCE_ONLY = ['waterDispenser', 'pc', 'laptop', 'wallSwitch', 'wallPlug', 'cctvDome', 'cctvBullet', 'tvWall'];
+const APPLIANCE_ONLY = ['waterDispenser', 'pc', 'laptop', 'rackServer', 'printer', 'wallSwitch', 'wallPlug', 'cctvDome', 'cctvBullet', 'tvWall'];
 // The appliances that hang on a wall (the editor snaps them to walls and faces them into the room).
 export const WALL_APPLIANCES = ['wallSwitch', 'wallPlug'];
 export const FURNITURE_TYPES = Object.keys(builders).filter((t) => !APPLIANCE_ONLY.includes(t));
@@ -639,6 +673,8 @@ export function footprint(item) {
     case 'waterDispenser': return [0.4, 0.4];
     case 'pc': return [0.55, 0.36];
     case 'laptop': return [0.31, 0.24];
+    case 'rackServer': return [0.6, 0.8];
+    case 'printer': return [0.45, 0.4];
     case 'tv': return [w || 1.7, 0.4];
     case 'tvWall': return [w || 1.7, 0.15];
     case 'wallSwitch': return [0.07 * (item.gang || 1) + 0.02, 0.1];

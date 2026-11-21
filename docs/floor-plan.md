@@ -142,7 +142,7 @@ and windows need a straight stretch as long as the opening.
 
 | Field | Meaning |
 | --- | --- |
-| `type` | `door`, `window`, or `open` (a doorway without a door, or a missing piece of wall) |
+| `type` | `door`, `window`, `open` (a doorway without a door, or a missing piece of wall) or `glass` (a glass wall, floor to ceiling, with a thin frame) |
 | `from`, `to` | `[x, z]` end points |
 | `sill`, `head` | Bottom and top of a window. Defaults `0.85` and `2.1` |
 | `level` | Its floor, on a home with [several](#levels-floors) |
@@ -217,7 +217,7 @@ and its status light glows green while it is on. Same fields as `acs`, except th
 | Field | Meaning |
 | --- | --- |
 | `id`, `name`, `room` | As for lights |
-| `type` | `waterDispenser`, `pc` (an iMac-style all-in-one), `laptop` (a MacBook-style laptop; set `y` to a desk's height, about `0.74`), `tv`, `tvWall` (a TV on a wall bracket, `y` is its bottom edge, `0.8` by default), `wallSwitch` (a light switch on a wall plate; `y` is the bottom of the plate, `1` by default; `gang` is `1` (default), `2` or `3`) or `wallPlug` (a wall socket, `0.3` by default), `cctvBullet` and `cctvDome` (ceiling cameras, hanging from their `y`, `2.4` by default). All take `color`: `white` (default) or `black` |
+| `type` | `waterDispenser`, `pc` (an iMac-style all-in-one), `laptop` (a MacBook-style laptop; set `y` to a desk's height, about `0.74`), `rackServer` (a server rack, 1.2 m high), `printer` (a desk printer), `tv`, `tvWall` (a TV on a wall bracket, `y` is its bottom edge, `0.8` by default), `wallSwitch` (a light switch on a wall plate; `y` is the bottom of the plate, `1` by default; `gang` is `1` (default), `2` or `3`) or `wallPlug` (a wall socket, `0.3` by default), `cctvBullet` and `cctvDome` (ceiling cameras, hanging from their `y`, `2.4` by default). All take `color`: `white` (default) or `black` |
 | `pos` | `[x, z]` of its centre |
 | `rot` | Optional: the angle in degrees |
 | `glow` | Optional: the colour of its outline and LED when it is on: `warm` (default, a warm yellow), `blue`, `white`, `orange`, `red`, `purple`, or any `"#rrggbb"`. The outline only shows while the linked device is on |

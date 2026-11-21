@@ -24,7 +24,7 @@ const sv = (tag, attrs = {}, ...kids) => {
 };
 
 // What the editor calls each appliance (the plan file keeps the type id).
-const APPLIANCE_LABELS = { waterDispenser: 'Water dispenser', pc: 'PC', laptop: 'Laptop', tv: 'TV', wallSwitch: 'Wall switch', wallPlug: 'Wall socket', cctvDome: 'CCTV dome', cctvBullet: 'CCTV bullet', tvWall: 'Wall TV' };
+const APPLIANCE_LABELS = { waterDispenser: 'Water dispenser', pc: 'PC', laptop: 'Laptop', rackServer: 'Rack server', printer: 'Printer', tv: 'TV', wallSwitch: 'Wall switch', wallPlug: 'Wall socket', cctvDome: 'CCTV dome', cctvBullet: 'CCTV bullet', tvWall: 'Wall TV' };
 // Where a new appliance of each type starts, in metres (its "y").
 const APPLIANCE_HEIGHT = { wallSwitch: 1, wallPlug: 0.3, cctvBullet: 2.4, cctvDome: 2.4, tvWall: 0.8 };
 
@@ -1977,7 +1977,7 @@ export async function bootEditor(root, options = {}) {
     } else if (kind === 'opening') {
       head(item.type || 'door', 'A gap or a window in a wall');
       nodes.push(section('Opening',
-        bind('Type', choice([['door', 'Door'], ['open', 'Open passage'], ['window', 'Window']]), { ...prop(item, 'type', 'door'), event: 'change' }),
+        bind('Type', choice([['door', 'Door'], ['open', 'Open passage'], ['window', 'Window'], ['glass', 'Glass wall']]), { ...prop(item, 'type', 'door'), event: 'change' }),
         row(bind('From X', number(), { ...at(item, 'from', 0), parse: parseNum }), bind('From Z', number(), { ...at(item, 'from', 1), parse: parseNum })),
         row(bind('To X', number(), { ...at(item, 'to', 0), parse: parseNum }), bind('To Z', number(), { ...at(item, 'to', 1), parse: parseNum })),
         item.type === 'window' ? row(bind('Sill, m', number(), { ...prop(item, 'sill', 0.85), parse: parseNum }),

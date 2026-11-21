@@ -200,6 +200,15 @@ export function buildHouse(config, level = config.levels[0]) {
     if (type === 'door' || type === 'open') continue;
 
     const height = exterior ? H : Hi;
+    if (type === 'glass') {
+      // A glass wall: a clear panel from the floor to the ceiling, with a thin frame at its ends and top.
+      const pane = piece(s, a, b, 0, H, 0.03, glass, parent);
+      pane.castShadow = false;
+      const fw = 0.05;
+      for (const [fa, fb] of [[a, a + fw], [b - fw, b]]) piece(s, fa, fb, 0, H, 0.07, frame, parent);
+      piece(s, a, b, H - fw, H, 0.07, frame, parent);
+      continue;
+    }
     if (type === 'window' && exterior) {
       const { sill, head } = s.opening;
       piece(s, a, b, 0, sill, t, wallMats, parent);

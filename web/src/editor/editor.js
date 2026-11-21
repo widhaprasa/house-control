@@ -5,7 +5,7 @@
 import './editor.css';
 import { normalize, loadRawConfig, LIGHT_KINDS, FLOOR_KINDS, isLinked, levelsOf } from '../config.js';
 import { createWorld } from '../three/world.js';
-import { FURNITURE_TYPES, APPLIANCE_TYPES, WALL_APPLIANCES, footprint } from '../three/furniture.js';
+import { FURNITURE_TYPES, APPLIANCE_TYPES, WALL_APPLIANCES, GLOW_COLORS, footprint } from '../three/furniture.js';
 import {
   isPolygon, roomCorners, roomRadii, hasRounding, roomBounds, roomCenter, roomLabelPoint, roomPoints,
   pointInRoom, pointOnOutline, distanceToSegment, resizeRoom, translateRoom, setRoomPoints, makeRectangular, rectFromPoints,
@@ -24,7 +24,9 @@ const sv = (tag, attrs = {}, ...kids) => {
 };
 
 // What the editor calls each appliance (the plan file keeps the type id).
-const APPLIANCE_LABELS = { waterDispenser: 'Water dispenser', pc: 'PC', tv: 'TV', wallSwitch: 'Wall switch', wallPlug: 'Wall socket' };
+const APPLIANCE_LABELS = { waterDispenser: 'Water dispenser', pc: 'PC', laptop: 'Laptop', tv: 'TV', wallSwitch: 'Wall switch', wallPlug: 'Wall socket', cctvDome: 'CCTV dome', cctvBullet: 'CCTV bullet', tvWall: 'Wall TV' };
+// Where a new appliance of each type starts, in metres (its "y").
+const APPLIANCE_HEIGHT = { wallSwitch: 1, wallPlug: 0.3, cctvBullet: 2.4, cctvDome: 2.4, tvWall: 0.8 };
 
 const KEYS = { room: 'rooms', light: 'lights', ac: 'acs', appliance: 'appliances', furniture: 'furniture', opening: 'openings', scene: 'scenes' };
 const TITLES = { room: 'Rooms', light: 'Lights', ac: 'Air conditioners', appliance: 'Appliances', furniture: 'Furniture', opening: 'Doors & windows', scene: 'Scenes' };
@@ -491,6 +493,8 @@ export async function bootEditor(root, options = {}) {
     const state = { lights: {}, acs: {}, appliances: {} };
     for (const l of cfg.lights) state.lights[l.id] = { on: previewLights, brightness: 0.85, temp: 3200, color: l.color || null };
     for (const a of cfg.acs) state.acs[a.id] = { on: previewLights, mode: 'cool', fan: 'auto', swing: 'swing', sleep: false, target: 23 };
+    // Appliances follow the same switch, so their glow shows with the lights.
+    for (const p of cfg.appliances) state.appliances[p.id] = { on: previewLights };
     return { state, on: () => () => {} };
   }
 
@@ -629,13 +633,13 @@ export async function bootEditor(root, options = {}) {
       const kind2 = type || 'waterDispenser';
       if (WALL_APPLIANCES.includes(kind2)) {
         // A switch (1 m up) or a socket (0.3 m up) goes on a wall, like an AC: on the room's north wall to start with.
-        const sw = { id: uniqueId(`${room.id}.${kind2 === 'wallPlug' ? 'plug' : 'switch'}`), name: kind2 === 'wallPlug' ? 'New wall socket' : 'New switch', room: room.id, type: kind2, pos: [...center], rot: 0, y: kind2 === 'wallPlug' ? 0.3 : 1 };
+        const sw = { id: uniqueId(`${room.id}.${kind2}`), name: `New ${(APPLIANCE_LABELS[kind2] || 'switch').toLowerCase()}`, room: room.id, type: kind2, pos: [...center], rot: 0, y: APPLIANCE_HEIGHT[kind2] };
         snapSwitch(sw, [center[0], roomBounds(room)[1]], room);
         list.push(sw);
         // Bring it into view, so it can be found straight away.
         view = { x: sw.pos[0] - 1.5, y: sw.pos[1] - 1.5, w: 3, h: 3 };
       } else {
-        list.push({ id: uniqueId(`${room.id}.appliance`), name: 'New appliance', room: room.id, type: kind2, pos: applianceSpot(room, center), rot: 0 });
+        list.push({ id: uniqueId(`${room.id}.appliance`), name: 'New appliance', room: room.id, type: kind2, pos: applianceSpot(room, center), rot: 0, ...(APPLIANCE_HEIGHT[kind2] ? { y: APPLIANCE_HEIGHT[kind2] } : {}) });
       }
     } else if (kind === 'furniture') {
       list.push(stamp(type === 'stairs' ? { type, pos: center, rot: 0, width: 1, depth: 2.8 } : { type: type || 'sofa', pos: center, rot: 0 }));
@@ -1093,17 +1097,23 @@ export async function bootEditor(root, options = {}) {
     doc.appliances.forEach((a, i) => {
       if (!here('appliance', a)) return;
       const linked = withConnections && isLinked(a);
+      // An ordinary appliance is drawn at its real footprint (a TV is 1.7 m wide), with its status light in the corner.
+      const [fw, fd] = footprint(a);
       kids.push(sv('g', {
         class: `p-appl${isSel('appliance', i) ? ' sel' : ''}${linked ? ' linked' : ''}`, 'data-kind': 'appliance', 'data-index': i,
         transform: `translate(${a.pos[0]} ${a.pos[1]}) rotate(${-(a.rot || 0)})`,
-      }, big ? sv('circle', { r: WALL_APPLIANCES.includes(a.type) ? 0.3 : 0.5, class: 'hit' }) : null,
+      }, big ? sv('circle', { r: WALL_APPLIANCES.includes(a.type) ? 0.3 : Math.max(fw, fd) / 2 + 0.1, class: 'hit' }) : null,
         // A wall switch is a small plate on its wall; other appliances are a box with a status light.
-        WALL_APPLIANCES.includes(a.type)
-          ? sv('rect', { x: -0.1 * (a.gang || 1), y: -0.07, width: 0.2 * (a.gang || 1), height: 0.14, rx: 0.03 })
-          : sv('rect', { x: -0.3, y: -0.2, width: 0.6, height: 0.4, rx: 0.06 }),
-        sv('circle', WALL_APPLIANCES.includes(a.type)
-          ? { cx: 0.1 * (a.gang || 1) - 0.035, cy: 0, r: 0.022, class: 'led' }
-          : { cx: 0.2, cy: 0.1, r: 0.05, class: 'led' })));
+        a.type === 'cctvDome' || a.type === 'cctvBullet'
+          ? sv('circle', { r: 0.1, class: 'shape' })
+          : WALL_APPLIANCES.includes(a.type)
+            ? sv('rect', { x: -0.1 * (a.gang || 1), y: -0.07, width: 0.2 * (a.gang || 1), height: 0.14, rx: 0.03 })
+            : sv('rect', { x: -fw / 2, y: -fd / 2, width: fw, height: fd, rx: 0.04 }),
+        sv('circle', a.type === 'cctvDome' || a.type === 'cctvBullet'
+          ? { cx: 0.06, cy: 0, r: 0.018, class: 'led' }
+          : WALL_APPLIANCES.includes(a.type)
+            ? { cx: 0.1 * (a.gang || 1) - 0.035, cy: 0, r: 0.022, class: 'led' }
+            : { cx: fw / 2 - 0.05, cy: -fd / 2 + 0.05, r: 0.035, class: 'led' })));
     });
 
     doc.lights.forEach((l, i) => {
@@ -1910,6 +1920,7 @@ export async function bootEditor(root, options = {}) {
       withConnections ? links.sensorSection(item, linkHooks) : null);
     } else if (kind === 'appliance') {
       head(item.name || item.id, `id: ${item.id}`);
+      // Same order as the furniture inspector: type, position, rotation, options, buttons; then the device link.
       nodes.push(section('Appliance',
         bind('Name', text(), prop(item, 'name', '')),
         bind('Type', choice(APPLIANCE_TYPES.map((t) => [t, APPLIANCE_LABELS[t] || t])), {
@@ -1917,8 +1928,8 @@ export async function bootEditor(root, options = {}) {
           // A switch sits on a wall at about 1 m, so it gets that height when it becomes one.
           set: (v) => {
             item.type = v;
+            if (APPLIANCE_HEIGHT[v]) item.y = APPLIANCE_HEIGHT[v];
             if (WALL_APPLIANCES.includes(v)) {
-              item.y = v === 'wallPlug' ? 0.3 : 1;
               snapSwitch(item, item.pos);
               // Bring the switch into view, as adding one does.
               view = { x: item.pos[0] - 1.5, y: item.pos[1] - 1.5, w: 3, h: 3 };
@@ -1926,6 +1937,9 @@ export async function bootEditor(root, options = {}) {
           },
           event: 'change',
         }),
+        row(bind('X', number(), { ...at(item, 'pos', 0), parse: parseNum }), bind('Z', number(), { ...at(item, 'pos', 1), parse: parseNum })),
+        row(bind('Rotation, °', number(15), { ...prop(item, 'rot', 0), parse: parseNum }),
+          bind('Height, m', number(0.05), { ...prop(item, 'y', 0), parse: parseNum })),
         WALL_APPLIANCES.includes(item.type)
           ? bind('Colour', choice([['white', 'White'], ['black', 'Black']]), { ...prop(item, 'color', 'white'), event: 'change' })
           : null,
@@ -1935,11 +1949,16 @@ export async function bootEditor(root, options = {}) {
             set: (v) => { item.gang = Number(v); },
             event: 'change',
           })
-          : null),
-      section('Position, m',
-        row(bind('X', number(), { ...at(item, 'pos', 0), parse: parseNum }), bind('Z', number(), { ...at(item, 'pos', 1), parse: parseNum })),
-        row(bind('Height, m', number(0.05), { ...prop(item, 'y', 0), parse: parseNum }),
-          bind('Rotation, °', number(15), { ...prop(item, 'rot', 0), parse: parseNum }))),
+          : null,
+        // Any colour: a preset name from older plans shows as its colour.
+        bind('Glow', h('input', { type: 'color' }), {
+          get: () => GLOW_COLORS[item.glow] || (/^#[0-9a-f]{6}$/i.test(item.glow || '') ? item.glow : GLOW_COLORS.warm),
+          set: (v) => { item.glow = v; },
+          event: 'input',
+        }),
+        h('div.fields',
+          h('button.btn', { onclick: () => rotate(90) }, icon('rotateCw', 14, 2.2), 'Turn 90°'),
+          h('button.btn', { onclick: duplicate }, icon('duplicate', 14, 2.2), 'Duplicate'))),
       withConnections ? links.deviceSection(item, 'light', linkHooks) : null);
     } else if (kind === 'furniture') {
       const stairs = item.type === 'stairs';

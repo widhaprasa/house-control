@@ -217,9 +217,10 @@ and its status light glows green while it is on. Same fields as `acs`, except th
 | Field | Meaning |
 | --- | --- |
 | `id`, `name`, `room` | As for lights |
-| `type` | `waterDispenser`, `pc`, `tv`, `wallSwitch` (a light switch on a wall plate; `y` is the bottom of the plate, `1` by default; `gang` is `1` (default), `2` or `3`) or `wallPlug` (a wall socket, `0.3` by default). Both take `color`: `white` (default) or `black` |
+| `type` | `waterDispenser`, `pc` (an iMac-style all-in-one), `laptop` (a MacBook-style laptop; set `y` to a desk's height, about `0.74`), `tv`, `tvWall` (a TV on a wall bracket, `y` is its bottom edge, `0.8` by default), `wallSwitch` (a light switch on a wall plate; `y` is the bottom of the plate, `1` by default; `gang` is `1` (default), `2` or `3`) or `wallPlug` (a wall socket, `0.3` by default), `cctvBullet` and `cctvDome` (ceiling cameras, hanging from their `y`, `2.4` by default). All take `color`: `white` (default) or `black` |
 | `pos` | `[x, z]` of its centre |
 | `rot` | Optional: the angle in degrees |
+| `glow` | Optional: the colour of its outline and LED when it is on: `warm` (default, a warm yellow), `blue`, `white`, `orange`, `red`, `purple`, or any `"#rrggbb"`. The outline only shows while the linked device is on |
 | `link` | Link to a switch, light or `media_player` entity (Home Assistant) or to a Hue / Apple Home device |
 
 ```jsonc

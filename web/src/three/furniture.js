@@ -112,6 +112,20 @@ const builders = {
     );
   },
 
+  tvWall({ width = 1.7 }) {
+    // A wall TV: the screen on a wall bracket, its bottom edge at y = 0 (set the height in the editor).
+    const sw = width * 0.84;
+    const sh = sw * 0.5625;
+    const screen = new THREE.MeshStandardMaterial({
+      color: '#05070c', roughness: 0.25, emissive: '#27407a', emissiveIntensity: 0.35,
+    });
+    return group(
+      at(box(0.06, sh * 0.6, 0.03, mat('#2a2c33', { rough: 0.5, metal: 0.5 }), { r: 0.006 }), 0, 0.1, -0.2), // bracket on the wall
+      at(box(sw + 0.03, sh + 0.03, 0.035, mat(BLACK, { rough: 0.4 }), { r: 0.008 }), 0, 0, -0.15),
+      at(box(sw - 0.02, sh - 0.02, 0.01, screen, { r: 0 }), 0, 0.015, -0.129),
+    );
+  },
+
   sideboard({ width = 1.6 }) {
     return group(
       ...legs(width, 0.42, 0.16, mat(BLACK), 0.07, 0.015),
@@ -344,20 +358,78 @@ const builders = {
     return g;
   },
 
+  cctvDome({ color = 'white' } = {}) {
+    // A ceiling dome camera: a mount plate on the ceiling (y = 0) with a dome hanging from it and a dark lens.
+    const shell = mat(color === 'black' ? '#1d1f24' : '#eceef2', { rough: 0.4 });
+    const dark = mat('#101216', { rough: 0.2, metal: 0.4 });
+    const led = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.012, 0.004), new THREE.MeshStandardMaterial({ color: '#3a3d44', roughness: 0.4 }));
+    led.position.set(0, -0.03, 0.066);
+    const dome = new THREE.Mesh(new THREE.SphereGeometry(0.07, 24, 12, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), shell); // the lower half
+    const lens = new THREE.Mesh(new THREE.CircleGeometry(0.03, 16), dark);
+    lens.rotation.x = Math.PI / 2; // facing down
+    lens.position.y = -0.069;
+    const g = group(at(cyl(0.05, 0.05, 0.012, shell, 24), 0, 0, 0), dome, lens, led);
+    g.userData.led = led;
+    return g;
+  },
+
+  cctvBullet({ color = 'white' } = {}) {
+    // A ceiling camera on a bracket: a stem from the ceiling (y = 0), and the camera body hanging from
+    // the stem's end and tilted 60 degrees from straight down, so it looks down and out into the room.
+    const shell = mat(color === 'black' ? '#1d1f24' : '#eceef2', { rough: 0.4 });
+    const dark = mat('#101216', { rough: 0.2, metal: 0.4 });
+    const led = new THREE.Mesh(new THREE.BoxGeometry(0.004, 0.012, 0.012), new THREE.MeshStandardMaterial({ color: '#3a3d44', roughness: 0.4 }));
+    led.position.set(0.037, -0.08, 0);
+    const head = new THREE.Group();
+    head.position.y = -0.1; // hinged at the bottom of the stem
+    head.rotation.x = -THREE.MathUtils.degToRad(60); // 60 deg from straight down: out and down
+    head.add(
+      at(cyl(0.035, 0.035, 0.16, shell, 24), 0, -0.16, 0), // body, from the hinge down its own length
+      at(cyl(0.03, 0.03, 0.01, dark, 20), 0, -0.17, 0), // lens cap at the front end
+      led,
+    );
+    const g = group(
+      at(cyl(0.04, 0.04, 0.012, shell, 20), 0, 0, 0), // ceiling plate
+      at(cyl(0.02, 0.02, 0.1, shell, 12), 0, -0.1, 0), // stem: -0.10 to 0
+      head,
+    );
+    g.userData.led = led;
+    return g;
+  },
+
   pc() {
-    // A desktop PC without a desk: the tower, monitor and keyboard stand on y = 0. Set the
-    // appliance's "y" to a desk's height to place it on one.
-    const caseMat = mat('#2a2d35', { rough: 0.5 });
-    const screen = mat(BLACK, { rough: 0.2 });
-    const glow = mat('#2d6fa8', { rough: 0.3, emissive: '#2d6fa8', emissiveIntensity: 0.35 });
+    // An iMac-style all-in-one: a white display on a thin stand, with a keyboard in front. The parts stand
+    // on y = 0; set the appliance's "y" to a desk's height to place it on one.
+    const white = mat('#e6e8ec', { rough: 0.3, metal: 0.1 });
+    const dark = mat('#101216', { rough: 0.2 });
+    const glass = mat('#15243a', { rough: 0.15, emissive: '#2d6fa8', emissiveIntensity: 0.25 });
     return group(
-      at(box(0.19, 0.42, 0.42, caseMat, { r: 0.015 }), 0.3, 0, -0.05), // tower
-      at(box(0.012, 0.06, 0.06, glow, { r: 0.004 }), 0.3 - 0.096, 0.1, -0.05), // its front light
-      at(box(0.2, 0.012, 0.14, mat(BLACK), { r: 0.005 }), -0.05, 0, -0.18), // monitor foot
-      at(box(0.05, 0.1, 0.05, mat(BLACK), { r: 0.01 }), -0.05, 0.012, -0.18), // monitor neck
-      at(box(0.56, 0.34, 0.03, screen, { r: 0.012 }), -0.05, 0.11, -0.18), // monitor
-      at(box(0.5, 0.28, 0.005, glow, { r: 0.008 }), -0.05, 0.13, -0.163), // its lit screen
-      at(box(0.4, 0.02, 0.14, mat('#3a3d46', { rough: 0.6 }), { r: 0.008 }), -0.05, 0, 0.1), // keyboard
+      at(cyl(0.11, 0.11, 0.012, white, 24), 0, 0, 0), // foot
+      at(cyl(0.02, 0.02, 0.2, white, 12), 0, 0.012, -0.03), // stand
+      at(box(0.52, 0.36, 0.05, white, { r: 0.03 }), 0, 0.2, -0.02), // display body
+      at(box(0.49, 0.33, 0.006, glass, { r: 0.004 }), 0, 0.215, 0.008), // screen, on the front
+      at(box(0.4, 0.015, 0.13, white, { r: 0.005 }), 0, 0, 0.2), // keyboard
+      at(box(0.37, 0.002, 0.1, dark, { r: 0.002 }), 0, 0.015, 0.2), // its keys
+    );
+  },
+
+  laptop() {
+    // A laptop like a MacBook: a silver base with a keyboard and trackpad, and a lid tilted a little
+    // back. Set the appliance's "y" to a desk's height to place it on one.
+    const silver = mat('#c9ccd2', { rough: 0.3, metal: 0.5 });
+    const dark = mat('#101216', { rough: 0.25 });
+    const lid = new THREE.Group();
+    lid.position.set(0, 0.015, -0.11); // hinged at the back edge of the base
+    lid.rotation.x = -THREE.MathUtils.degToRad(20);
+    lid.add(
+      at(box(0.31, 0.21, 0.01, silver, { r: 0.008 }), 0, 0, 0),
+      at(box(0.29, 0.19, 0.004, dark, { r: 0.004 }), 0, 0.01, 0.005), // screen, facing forward
+    );
+    return group(
+      at(box(0.31, 0.015, 0.22, silver, { r: 0.006 }), 0, 0, 0), // base
+      at(box(0.27, 0.002, 0.09, dark, { r: 0.002 }), 0, 0.015, 0.02), // keys
+      at(box(0.1, 0.002, 0.06, mat('#b6b9c0', { rough: 0.4 }), { r: 0.002 }), 0, 0.015, 0.085), // trackpad
+      lid,
     );
   },
 
@@ -536,7 +608,7 @@ const builders = {
 };
 
 // Appliance-only pieces: they only exist as appliances (linked, clickable, with a status light).
-const APPLIANCE_ONLY = ['waterDispenser', 'pc', 'wallSwitch', 'wallPlug'];
+const APPLIANCE_ONLY = ['waterDispenser', 'pc', 'laptop', 'wallSwitch', 'wallPlug', 'cctvDome', 'cctvBullet', 'tvWall'];
 // The appliances that hang on a wall (the editor snaps them to walls and faces them into the room).
 export const WALL_APPLIANCES = ['wallSwitch', 'wallPlug'];
 export const FURNITURE_TYPES = Object.keys(builders).filter((t) => !APPLIANCE_ONLY.includes(t));
@@ -552,7 +624,6 @@ export function footprint(item) {
     case 'sofa': return [w || 2.2, 0.95];
     case 'armchair': return [0.92, 0.88];
     case 'coffeeTable': return [w || 1.1, 0.58];
-    case 'tv': return [w || 1.7, 0.4];
     case 'sideboard': return [w || 1.6, 0.42];
     case 'diningSet': return [w || 1.8, 1.9];
     case 'island': return [w || 2, 1.1];
@@ -566,9 +637,14 @@ export function footprint(item) {
     case 'bathtub': return [1.7, 0.78];
     case 'toilet': return [0.4, 0.66];
     case 'waterDispenser': return [0.4, 0.4];
-    case 'pc': return [0.6, 0.45];
+    case 'pc': return [0.55, 0.36];
+    case 'laptop': return [0.31, 0.24];
+    case 'tv': return [w || 1.7, 0.4];
+    case 'tvWall': return [w || 1.7, 0.15];
     case 'wallSwitch': return [0.07 * (item.gang || 1) + 0.02, 0.1];
     case 'wallPlug': return [0.09, 0.1];
+    case 'cctvDome': return [0.14, 0.14];
+    case 'cctvBullet': return [0.08, 0.08];
     case 'desk': return [w || 1.4, 0.65];
     case 'officeChair': return [0.5, 0.5];
     case 'officeTable': return [w || 1.8, item.depth || 0.9];
@@ -581,25 +657,54 @@ export function footprint(item) {
   }
 }
 
-// Shows whether a linked piece's real device is on: its status light glows green when on.
+// Colours an appliance's outline and LED can glow in (a name from here, or any "#rrggbb").
+export const GLOW_COLORS = { warm: '#ffd27a', blue: '#4da3ff', white: '#ffffff', orange: '#ff9a3d', red: '#ff4d4d', purple: '#b07cff' };
+const glowColor = (value) => GLOW_COLORS[value] || (/^#[0-9a-f]{6}$/i.test(value || '') ? value : GLOW_COLORS.warm);
+
+// Shows whether a linked appliance's device is on: its outline lights up in its glow colour,
+// and its LED (where it has one) glows the same.
 export function setFurnitureStatus(root, id, on) {
   for (const g of root.children) {
-    const led = g.userData.id === id ? g.userData.led : null;
+    if (g.userData.id !== id) continue;
+    if (g.userData.glow) g.userData.glow.visible = Boolean(on);
+    const led = g.userData.led;
     if (!led) continue;
-    led.material.color.set(on ? '#3dff7a' : '#3a3d44');
-    led.material.emissive.set(on ? '#3dff7a' : '#000000');
+    const c = g.userData.glowColor || GLOW_COLORS.warm;
+    led.material.color.set(on ? c : '#3a3d44');
+    led.material.emissive.set(on ? c : '#000000');
     led.material.emissiveIntensity = on ? 1.2 : 0;
   }
 }
 
-// A piece without a status light of its own gets one at its front, bottom corner.
-function ensureStatusLight(g) {
-  if (g.userData.led) return;
-  const box = new THREE.Box3().setFromObject(g);
-  const led = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.035, 0.01), new THREE.MeshStandardMaterial({ color: '#3a3d44', roughness: 0.4 }));
-  led.position.set(box.max.x - 0.06, box.min.y + 0.12, box.max.z + 0.005);
-  g.add(led);
-  g.userData.led = led;
+// An appliance's outline: a glowing shell round each part of the piece, so the light follows its real
+// shape. Each part is copied, swollen a little along its surface and drawn from inside. Hidden until
+// its device is on.
+function ensureGlow(g, color) {
+  g.updateMatrixWorld(true); // the piece is not moved yet, so every part's world matrix is relative to it
+  const glow = new THREE.Group();
+  const mat = new THREE.MeshBasicMaterial({ color: glowColor(color), side: THREE.BackSide, toneMapped: false });
+  const SWELL = 0.012;
+  g.traverse((o) => {
+    if (!o.isMesh) return;
+    const geo = o.geometry.clone();
+    const pos = geo.attributes.position;
+    const nor = geo.attributes.normal;
+    if (nor) {
+      for (let i = 0; i < pos.count; i++) {
+        pos.setXYZ(i, pos.getX(i) + nor.getX(i) * SWELL, pos.getY(i) + nor.getY(i) * SWELL, pos.getZ(i) + nor.getZ(i) * SWELL);
+      }
+    }
+    const shell = new THREE.Mesh(geo, mat);
+    shell.matrixAutoUpdate = false;
+    shell.matrix.copy(o.matrixWorld);
+    shell.castShadow = false;
+    shell.receiveShadow = false;
+    glow.add(shell);
+  });
+  glow.visible = false;
+  g.add(glow);
+  g.userData.glow = glow;
+  g.userData.glowColor = glowColor(color);
 }
 
 // An invisible box over an appliance, so a click on it reaches the appliance.
@@ -622,9 +727,10 @@ export function buildFurniture(items) {
       continue;
     }
     const g = make(item);
-    g.position.set(item.pos[0], item.y || 0, item.pos[1]);
     g.userData.id = item.id;
-    if (item.appliance) ensureStatusLight(g);
+    // Measured before the piece is moved, so the outline sits round it in its own frame.
+    if (item.appliance) ensureGlow(g, item.glow);
+    g.position.set(item.pos[0], item.y || 0, item.pos[1]);
     g.rotation.y = THREE.MathUtils.degToRad(item.rot || 0);
     const flat = g.userData.flat;
     g.traverse((o) => {

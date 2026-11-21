@@ -278,6 +278,56 @@ const builders = {
     return group(at(box(0.38, 0.78, 0.17, c, { r: 0.03 }), 0, 0, -0.24), bowl, lid);
   },
 
+  waterDispenser() {
+    const body = mat('#eceef2', { rough: 0.4 });
+    const bottle = mat('#7fb8e6', { rough: 0.15, opacity: 0.55 });
+    const steel = mat('#9a9fa8', { rough: 0.3, metal: 0.7 });
+    // A status light: green while the linked switch is on. Its own material, so only this one lights up.
+    const led = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.035, 0.01), new THREE.MeshStandardMaterial({ color: '#3a3d44', roughness: 0.4 }));
+    led.position.set(0.1, 0.8, 0.175);
+    const g = group(
+      // Cabinet with a bottle seat on top.
+      at(box(0.32, 0.9, 0.34, body, { r: 0.03 }), 0, 0, 0),
+      at(cyl(0.05, 0.06, 0.02, mat(BLACK), 16), 0, 0.91, 0),
+      // The water bottle, upside down on the cabinet.
+      at(cyl(0.14, 0.14, 0.38, bottle, 24), 0, 1.1, 0),
+      at(cyl(0.05, 0.14, 0.06, bottle, 24), 0, 0.94, 0),
+      // Two taps on the front: hot (red) and cold (blue), with a drip tray.
+      at(cyl(0.012, 0.012, 0.08, steel, 8), -0.06, 0.6, 0.19),
+      at(cyl(0.012, 0.012, 0.08, steel, 8), 0.06, 0.6, 0.19),
+      at(box(0.05, 0.03, 0.03, mat('#d2494c'), { r: 0.008 }), -0.06, 0.66, 0.2),
+      at(box(0.05, 0.03, 0.03, mat('#3d8fd6'), { r: 0.008 }), 0.06, 0.66, 0.2),
+      at(box(0.2, 0.02, 0.1, mat(BLACK, { rough: 0.5 }), { r: 0.008 }), 0, 0.2, 0.22),
+      led,
+    );
+    g.userData.led = led;
+    return g;
+  },
+
+  pc({ width = 1.0 }) {
+    // A desk with a tower, a monitor and a keyboard on it.
+    const wood = mat(WOOD, { rough: 0.55 });
+    const caseMat = mat('#2a2d35', { rough: 0.5 });
+    const screen = mat(BLACK, { rough: 0.2 });
+    const glow = mat('#2d6fa8', { rough: 0.3, emissive: '#2d6fa8', emissiveIntensity: 0.35 });
+    const monitor = group(
+      at(box(0.56, 0.34, 0.03, screen, { r: 0.012 }), 0, 0.2, 0),
+      at(box(0.5, 0.28, 0.005, glow, { r: 0.008 }), 0, 0.2, 0.017),
+      at(box(0.05, 0.14, 0.05, mat(BLACK), { r: 0.01 }), 0, 0.09, 0),
+      at(box(0.2, 0.012, 0.14, mat(BLACK), { r: 0.005 }), 0, 0.006, 0.02),
+    );
+    monitor.position.set(0, 0.72 + 0.02, -0.18);
+    return group(
+      at(box(width, 0.04, 0.6, wood, { r: 0.012 }), 0, 0.72, 0),
+      ...legs(width, 0.6, 0.72, mat(BLACK), 0.06, 0.02),
+      monitor,
+      at(box(0.4, 0.02, 0.14, mat('#3a3d46', { rough: 0.6 }), { r: 0.008 }), 0, 0.75, 0.1),
+      // The tower, standing on the desk at the right.
+      at(box(0.19, 0.42, 0.42, caseMat, { r: 0.015 }), width / 2 - 0.2, 0.74 + 0.21, -0.05),
+      at(box(0.012, 0.06, 0.06, glow, { r: 0.004 }), width / 2 - 0.2 - 0.096, 0.74 + 0.32, -0.05),
+    );
+  },
+
   desk({ width = 1.4 }) {
     const c = chair('#2b2e37');
     c.position.z = 0.5;
@@ -348,7 +398,12 @@ const builders = {
   },
 };
 
-export const FURNITURE_TYPES = Object.keys(builders);
+// Appliance-only pieces: they only exist as appliances (linked, clickable, with a status light).
+const APPLIANCE_ONLY = ['waterDispenser', 'pc'];
+export const FURNITURE_TYPES = Object.keys(builders).filter((t) => !APPLIANCE_ONLY.includes(t));
+
+// Pieces with a real on/off state. A TV is both furniture (decoration) and an appliance.
+export const APPLIANCE_TYPES = [...APPLIANCE_ONLY, 'tv'];
 
 // Approximate [width, depth] of each piece, for the 2D plan editor.
 export function footprint(item) {
@@ -371,12 +426,46 @@ export function footprint(item) {
     case 'vanity': return [w || 1, 0.5];
     case 'bathtub': return [1.7, 0.78];
     case 'toilet': return [0.4, 0.66];
+    case 'waterDispenser': return [0.4, 0.4];
+    case 'pc': return [w || 1, 0.6];
     case 'desk': return [w || 1.4, 0.65];
     case 'wardrobe': return [w || 1.6, 0.6];
     case 'bookshelf': return [w || 1, 0.32];
     case 'stairs': return [w || 1, item.depth || 2.8];
     default: return [0.6, 0.6];
   }
+}
+
+// Shows whether a linked piece's real device is on: its status light glows green when on.
+export function setFurnitureStatus(root, id, on) {
+  for (const g of root.children) {
+    const led = g.userData.id === id ? g.userData.led : null;
+    if (!led) continue;
+    led.material.color.set(on ? '#3dff7a' : '#3a3d44');
+    led.material.emissive.set(on ? '#3dff7a' : '#000000');
+    led.material.emissiveIntensity = on ? 1.2 : 0;
+  }
+}
+
+// A piece without a status light of its own gets one at its front, bottom corner.
+function ensureStatusLight(g) {
+  if (g.userData.led) return;
+  const box = new THREE.Box3().setFromObject(g);
+  const led = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.035, 0.01), new THREE.MeshStandardMaterial({ color: '#3a3d44', roughness: 0.4 }));
+  led.position.set(box.max.x - 0.06, box.min.y + 0.12, box.max.z + 0.005);
+  g.add(led);
+  g.userData.led = led;
+}
+
+// An invisible box over an appliance, so a click on it reaches the appliance.
+export function applianceHitBox(item) {
+  const [w, d] = footprint(item);
+  const hit = new THREE.Mesh(new THREE.BoxGeometry(w, 1.4, d), new THREE.MeshBasicMaterial());
+  hit.position.set(item.pos[0], (item.y || 0) + 0.7, item.pos[1]);
+  hit.rotation.y = THREE.MathUtils.degToRad(item.rot || 0);
+  hit.visible = false;
+  hit.userData = { kind: 'appliance', id: item.id };
+  return hit;
 }
 
 export function buildFurniture(items) {
@@ -389,6 +478,8 @@ export function buildFurniture(items) {
     }
     const g = make(item);
     g.position.set(item.pos[0], item.y || 0, item.pos[1]);
+    g.userData.id = item.id;
+    if (item.appliance) ensureStatusLight(g);
     g.rotation.y = THREE.MathUtils.degToRad(item.rot || 0);
     const flat = g.userData.flat;
     g.traverse((o) => {

@@ -1,6 +1,7 @@
 // Loads and normalises a floor plan ("home.json"). Everything the 3D scene and the UI
 // know about the apartment comes from this one document, so swapping the file swaps the home.
 import { isPoint as isGeometryPoint, roomCorners, roomBounds, isSimplePolygon } from './geometry.js';
+import { APPLIANCE_TYPES } from './three/furniture.js';
 
 const LIGHT_TYPES = ['ceiling', 'pendant', 'spots', 'floor', 'table', 'strip'];
 const WALLS = ['north', 'south', 'east', 'west'];
@@ -173,6 +174,15 @@ export function normalize(raw) {
     l.bounds = own.length ? box(own) : all;
   }
 
+  // Appliances: real things with an on/off state (a water dispenser, a PC, a TV). Linked like lights.
+  const appliances = (raw.appliances || []).map((a) => {
+    unique(a.id, 'An appliance');
+    need(APPLIANCE_TYPES.includes(a.type), `Appliance "${a.id}" has unknown type "${a.type}" (use ${APPLIANCE_TYPES.join(', ')})`);
+    need(roomIds.has(a.room), `Appliance "${a.id}" refers to unknown room "${a.room}"`);
+    need(isPoint(a.pos), `Appliance "${a.id}" needs "pos": [x, z]`);
+    return { ...a, name: a.name || a.id, rot: a.rot || 0, y: a.y || 0, level: roomLevel.get(a.room) };
+  });
+
   return {
     name: raw.name || 'Home',
     wallHeight,
@@ -185,6 +195,7 @@ export function normalize(raw) {
     furniture,
     lights,
     acs,
+    appliances,
     scenes,
     bounds: all,
   };

@@ -166,7 +166,8 @@ Decoration only. Every piece has `type`, `pos` (`[x, z]` of its centre), an opti
 | `wardrobe`, `bookshelf` | `width`, `height` |
 | `plant` | `height` |
 | `stairs` | `width`, `depth` (its length), `height` (up to the floor above by default). They climb away from the front |
-| `fridge`, `nightstand`, `bathtub`, `toilet` | — |
+| `fridge`, `nightstand`, `bathtub`, `toilet`, `waterDispenser` | — |
+| `pc` | `width` (the desk it stands on) |
 
 ## `lights`
 
@@ -196,6 +197,26 @@ Decoration only. Every piece has `type`, `pos` (`[x, z]` of its centre), an opti
 | `min`, `max` | Range of the target temperature. Defaults `16` and `30` |
 | `link`, `tuya` | Link to a real device — see below |
 | `sensor` | A thermometer for the room — see below |
+
+## `appliances`
+
+Things with a real on/off state: a water dispenser, a PC or a TV. Each one is clickable in 3D and in the panel,
+and its status light glows green while it is on. Same fields as `acs`, except that there is no `wall`.
+
+| Field | Meaning |
+| --- | --- |
+| `id`, `name`, `room` | As for lights |
+| `type` | `waterDispenser`, `pc` or `tv` |
+| `pos` | `[x, z]` of its centre |
+| `rot` | Optional: the angle in degrees |
+| `link` | Link to a switch, light or `media_player` entity (Home Assistant) or to a Hue / Apple Home device |
+
+```jsonc
+{ "id": "kitchen.water", "name": "Water dispenser", "room": "kitchen", "type": "waterDispenser",
+  "pos": [4.2, 1.1], "rot": 180, "link": { "service": "homeassistant", "id": "switch.water_dispenser" } }
+```
+
+A `tv` can also stay in `furniture` as plain decoration; the same type in `appliances` is clickable.
 
 ## `scenes`
 

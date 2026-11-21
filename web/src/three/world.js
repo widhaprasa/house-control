@@ -5,7 +5,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { buildHouse } from './house.js';
-import { buildFurniture } from './furniture.js';
+import { buildFurniture, setFurnitureStatus, applianceHitBox } from './furniture.js';
 import { LightUnit } from './lights.js';
 import { ACUnit } from './ac.js';
 
@@ -62,9 +62,13 @@ export function createWorld(canvas, config, store, {
     const group = new THREE.Group();
     group.position.y = l.elevation;
     const house = buildHouse(config, l);
-    group.add(house.group, buildFurniture(config.furniture.filter((f) => f.level === l.id)));
+    const furniture = buildFurniture(config.furniture.filter((f) => f.level === l.id));
+    const here = config.appliances.filter((a) => a.level === l.id);
+    const appliances = buildFurniture(here.map((a) => ({ ...a, appliance: true })));
+    const applianceHits = here.map(applianceHitBox);
+    group.add(house.group, furniture, appliances, ...applianceHits);
     scene.add(group);
-    floors.set(l.id, { group, house });
+    floors.set(l.id, { group, house, furniture, appliances, applianceHits });
   }
 
   const lights = new Map();
@@ -125,6 +129,7 @@ export function createWorld(canvas, config, store, {
     hitTargets = [
       ...[...lights.values()].filter((u) => u.group.visible).map((u) => u.hit),
       ...[...acs.values()].filter((u) => u.group.visible).map((u) => u.hit),
+      ...floors.get(level.id).applianceHits,
       ...floors.get(level.id).house.floors,
     ];
     assignShadows();
@@ -308,6 +313,9 @@ export function createWorld(canvas, config, store, {
   /* ---------- state sync ---------- */
 
   function syncAll(opts = {}) {
+    for (const { appliances } of floors.values()) {
+      for (const [id, s] of Object.entries(store.state.appliances || {})) setFurnitureStatus(appliances, id, s.on);
+    }
     let i = 0;
     for (const [id, unit] of lights) {
       unit.apply(store.state.lights[id], { ...opts, delay: opts.stagger ? 0.25 + i++ * 0.06 : 0 });

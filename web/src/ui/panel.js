@@ -269,8 +269,27 @@ export function createPanel(root, config, store, { onFocus, onMenu }) {
     };
   }
 
+  // An appliance (a water dispenser, a PC, a TV): a tile with its on/off state and a power button.
+  function applianceTile(cfg) {
+    const sub = h('div.tile-sub');
+    const toggle = () => { haptic('light'); store.toggleAppliance(cfg.id); };
+    const el = h('div.tile.appliance', { role: 'button', tabindex: 0, 'aria-label': cfg.name, onclick: toggle },
+      h('div.tile-text', h('div.tile-name', cfg.name), sub),
+      h('button.mini-power', { 'aria-label': `${cfg.name} power`, onclick: (e) => { e.stopPropagation(); toggle(); } }, icon('power', 16, 2.2)));
+    el.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') toggle(); });
+    return {
+      el, cfg, kind: 'appliance',
+      update() {
+        const on = Boolean(state.appliances?.[cfg.id]?.on);
+        el.classList.toggle('on', on);
+        sub.textContent = on ? 'On' : 'Off';
+      },
+    };
+  }
+
   for (const cfg of config.acs) tiles.set(cfg.id, acTile(cfg));
   for (const cfg of config.lights) tiles.set(cfg.id, lightTile(cfg));
+  for (const cfg of config.appliances) tiles.set(cfg.id, applianceTile(cfg));
 
   function toggleLight(id) {
     haptic('light');
@@ -293,6 +312,7 @@ export function createPanel(root, config, store, { onFocus, onMenu }) {
         if (ui.room === 'all') nodes.push(h('div.group-label', room.name));
         devices.filter((t) => t.kind === 'ac').forEach(add);
         devices.filter((t) => t.kind === 'light').forEach(add);
+        devices.filter((t) => t.kind === 'appliance').forEach(add);
       }
       if (multiLevel && ui.room === 'all' && nodes.length > before) nodes.splice(before, 0, h('div.level-label', level.name));
     }

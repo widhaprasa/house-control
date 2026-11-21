@@ -436,6 +436,8 @@ export const FURNITURE_GUIDE = {
   bathtub: 'bathtub',
   toilet: 'toilet',
   desk: 'desk; option width',
+  officeChair: 'office swivel chair; option color',
+  officeTable: 'office table; options width (default 1.8), depth (default 0.9), chairs (0–12 along both long sides, default 0)',
   wardrobe: 'wardrobe; options width, height',
   bookshelf: 'open bookshelf with books; options width, height',
   stairs: 'straight stairs up to the floor above, climbing towards the back (north at rot 0); options width, depth (its length)',

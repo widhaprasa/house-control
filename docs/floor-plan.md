@@ -160,6 +160,8 @@ Decoration only. Every piece has `type`, `pos` (`[x, z]` of its centre), an opti
 | `rug` | `size` (`[width, depth]`), `color` |
 | `tv`, `sideboard`, `dresser`, `desk`, `vanity` | `width` |
 | `diningSet` | `width`, `chairs` |
+| `officeTable` | `width` (default 1.8), `depth` (default 0.9), `chairs` (along both long sides, default 0) |
+| `officeChair` | `color` |
 | `island` | `width`, `stools` |
 | `kitchen` | `width`, `upper` (wall cabinets, `true` by default) |
 | `bed` | `width`, `color` |

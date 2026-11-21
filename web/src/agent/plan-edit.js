@@ -418,10 +418,10 @@ export function replacePlan(old, next) {
 
 /** What each furniture type is, for the AI that places it. */
 export const FURNITURE_GUIDE = {
+  rug: 'flat rug; options size [w, d], color',
   sofa: 'sofa; options width, color',
   armchair: 'armchair; option color',
   coffeeTable: 'low coffee table; option width',
-  rug: 'flat rug; options size [w, d], color',
   tv: 'TV on a low media console; option width',
   sideboard: 'sideboard / low cabinet; option width',
   diningSet: 'dining table with chairs around it; options width, chairs',
@@ -436,11 +436,11 @@ export const FURNITURE_GUIDE = {
   bathtub: 'bathtub',
   toilet: 'toilet',
   desk: 'desk; option width',
-  officeChair: 'office swivel chair; option color',
-  officeTable: 'office table; options width (default 1.8), depth (default 0.9), chairs (0–12 along both long sides, default 0)',
   wardrobe: 'wardrobe; options width, height',
   bookshelf: 'open bookshelf with books; options width, height',
   stairs: 'straight stairs up to the floor above, climbing towards the back (north at rot 0); options width, depth (its length)',
+  officeChair: 'office swivel chair; option color',
+  officeTable: 'office table; options width (default 1.8), depth (default 0.9), chairs (0–12 along both long sides, default 0)',
 };
 
 export function furnitureCatalog() {

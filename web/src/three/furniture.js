@@ -341,59 +341,6 @@ const builders = {
     );
   },
 
-  officeChair({ color = '#2b2e37' }) {
-    // A swivel office chair: a seat and back on a column, standing on a five-arm base with a wheel at each arm's end.
-    const fabric = mat(color, { rough: 0.9 });
-    const base = mat(BLACK, { rough: 0.5 });
-    const parts = [
-      at(box(0.46, 0.07, 0.46, fabric, { r: 0.03 }), 0, 0.44, 0), // seat
-      at(cyl(0.03, 0.03, 0.42, base, 10), 0, 0.03, 0), // column, from the base up to the seat
-    ];
-    // A curved back that starts at the seat's rear edge (z = -0.23) at both sides and bows back
-    // a little in the middle: a section of a large cylinder, double-sided so it reads as one panel.
-    const SEAT_HALF = 0.23;
-    const SAG = 0.07; // how far the middle sits behind the edges
-    const R = (SEAT_HALF * SEAT_HALF + SAG * SAG) / (2 * SAG);
-    const centreZ = R - 0.3; // the arc's middle is at z = -0.30 (the seat's rear edge less the sag)
-    const half = Math.asin(SEAT_HALF / R);
-    const shell = fabric.clone();
-    shell.side = THREE.DoubleSide;
-    const back = new THREE.Mesh(new THREE.CylinderGeometry(R, R, 0.45, 32, 1, true, Math.PI - half, 2 * half), shell);
-    back.position.set(0, 0.695, centreZ); // bottom at 0.47, sunk into the seat
-    back.castShadow = back.receiveShadow = true;
-    parts.push(back);
-    for (let i = 0; i < 5; i++) {
-      const a = (i * Math.PI * 2) / 5;
-      const arm = at(box(0.2, 0.03, 0.04, base, { r: 0.015 }), Math.cos(a) * 0.1, 0.03, Math.sin(a) * 0.1);
-      arm.rotation.y = -a; // along the radius
-      parts.push(arm);
-      const wheel = new THREE.Mesh(new THREE.SphereGeometry(0.03, 12, 8), base);
-      wheel.position.set(Math.cos(a) * 0.2, 0.03, Math.sin(a) * 0.2);
-      parts.push(wheel);
-    }
-    return group(parts);
-  },
-
-  officeTable({ width = 1.8, depth = 0.9, chairs = 0 }) {
-    // A table with chairs along both long sides (half on each).
-    const top = mat('#cdbf9f', { rough: 0.55 });
-    const g = group(
-      at(box(width, 0.05, depth, top, { r: 0.012 }), 0, 0.73, 0),
-      ...legs(width, depth, 0.73, mat(METAL, { rough: 0.3, metal: 0.6 }), 0.08, 0.03),
-    );
-    const perSide = Math.ceil(chairs / 2);
-    for (let i = 0; i < chairs; i++) {
-      const side = i < perSide ? -1 : 1;
-      const j = side < 0 ? i : i - perSide;
-      const count = side < 0 ? perSide : chairs - perSide;
-      const c = builders.officeChair({ color: '#2b2e37' });
-      c.position.set(-width / 2 + width * (j + 0.5) / Math.max(1, count), 0, side * (depth / 2 + 0.4));
-      if (side > 0) c.rotation.y = Math.PI; // the sitter faces the table
-      g.add(c);
-    }
-    return g;
-  },
-
   wardrobe({ width = 1.6, height = 2.1 }) {
     return group(
       at(box(width, height, 0.6, mat(WHITE, { rough: 0.6 }), { r: 0.015 }), 0, 0, 0),
@@ -446,6 +393,58 @@ const builders = {
     g.add(bar);
     for (const t of [0.1, 0.5, 0.9]) {
       g.add(at(box(0.025, 0.9, 0.025, rail, { r: 0 }), width / 2 - 0.03, height * t, depth / 2 - depth * t));
+    }
+    return g;
+  },
+  officeChair({ color = '#2b2e37' }) {
+    // A swivel office chair: a seat and back on a column, standing on a five-arm base with a wheel at each arm's end.
+    const fabric = mat(color, { rough: 0.9 });
+    const base = mat(BLACK, { rough: 0.5 });
+    const parts = [
+      at(box(0.46, 0.07, 0.46, fabric, { r: 0.03 }), 0, 0.44, 0), // seat
+      at(cyl(0.03, 0.03, 0.42, base, 10), 0, 0.03, 0), // column, from the base up to the seat
+    ];
+    // A curved back that starts at the seat's rear edge (z = -0.23) at both sides and bows back
+    // a little in the middle: a section of a large cylinder, double-sided so it reads as one panel.
+    const SEAT_HALF = 0.23;
+    const SAG = 0.07; // how far the middle sits behind the edges
+    const R = (SEAT_HALF * SEAT_HALF + SAG * SAG) / (2 * SAG);
+    const centreZ = R - 0.3; // the arc's middle is at z = -0.30 (the seat's rear edge less the sag)
+    const half = Math.asin(SEAT_HALF / R);
+    const shell = fabric.clone();
+    shell.side = THREE.DoubleSide;
+    const back = new THREE.Mesh(new THREE.CylinderGeometry(R, R, 0.45, 32, 1, true, Math.PI - half, 2 * half), shell);
+    back.position.set(0, 0.695, centreZ); // bottom at 0.47, sunk into the seat
+    back.castShadow = back.receiveShadow = true;
+    parts.push(back);
+    for (let i = 0; i < 5; i++) {
+      const a = (i * Math.PI * 2) / 5;
+      const arm = at(box(0.2, 0.03, 0.04, base, { r: 0.015 }), Math.cos(a) * 0.1, 0.03, Math.sin(a) * 0.1);
+      arm.rotation.y = -a; // along the radius
+      parts.push(arm);
+      const wheel = new THREE.Mesh(new THREE.SphereGeometry(0.03, 12, 8), base);
+      wheel.position.set(Math.cos(a) * 0.2, 0.03, Math.sin(a) * 0.2);
+      parts.push(wheel);
+    }
+    return group(parts);
+  },
+
+  officeTable({ width = 1.8, depth = 0.9, chairs = 0 }) {
+    // A table with chairs along both long sides (half on each).
+    const top = mat('#cdbf9f', { rough: 0.55 });
+    const g = group(
+      at(box(width, 0.05, depth, top, { r: 0.012 }), 0, 0.73, 0),
+      ...legs(width, depth, 0.73, mat(METAL, { rough: 0.3, metal: 0.6 }), 0.08, 0.03),
+    );
+    const perSide = Math.ceil(chairs / 2);
+    for (let i = 0; i < chairs; i++) {
+      const side = i < perSide ? -1 : 1;
+      const j = side < 0 ? i : i - perSide;
+      const count = side < 0 ? perSide : chairs - perSide;
+      const c = builders.officeChair({ color: '#2b2e37' });
+      c.position.set(-width / 2 + width * (j + 0.5) / Math.max(1, count), 0, side * (depth / 2 + 0.4));
+      if (side > 0) c.rotation.y = Math.PI; // the sitter faces the table
+      g.add(c);
     }
     return g;
   },

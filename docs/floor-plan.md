@@ -154,22 +154,29 @@ Decoration only. Every piece has `type`, `pos` (`[x, z]` of its centre), an opti
 
 | `type` | Extra options |
 | --- | --- |
+| `rug` | `size` (`[width, depth]`), `color` |
 | `sofa` | `width`, `color` |
 | `armchair` | `color` |
 | `coffeeTable` | `width` |
-| `rug` | `size` (`[width, depth]`), `color` |
-| `tv`, `sideboard`, `dresser`, `desk`, `vanity` | `width` |
+| `tv` | `width` |
+| `sideboard` | `width` |
 | `diningSet` | `width`, `chairs` |
-| `officeTable` | `width` (default 1.8), `depth` (default 0.9), `chairs` (along both long sides, default 0) |
-| `officeChair` | `color` |
 | `island` | `width`, `stools` |
 | `kitchen` | `width`, `upper` (wall cabinets, `true` by default) |
+| `fridge` | — |
 | `bed` | `width`, `color` |
-| `wardrobe`, `bookshelf` | `width`, `height` |
+| `nightstand` | — |
+| `dresser` | `width` |
 | `plant` | `height` |
+| `vanity` | `width` |
+| `bathtub` | — |
+| `toilet` | — |
+| `desk` | `width` |
+| `wardrobe` | `width`, `height` |
+| `bookshelf` | `width`, `height` |
 | `stairs` | `width`, `depth` (its length), `height` (up to the floor above by default). They climb away from the front |
-| `fridge`, `nightstand`, `bathtub`, `toilet`, `waterDispenser` | — |
-| `pc` | `width` (the desk it stands on) |
+| `officeChair` | `color` |
+| `officeTable` | `width` (default 1.8), `depth` (default 0.9), `chairs` (along both long sides, default 0) |
 
 ## `lights`
 

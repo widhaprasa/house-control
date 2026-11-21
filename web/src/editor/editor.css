@@ -113,7 +113,7 @@ html.mode-editor, html.mode-editor body { user-select: none; }
 .p-appl rect { fill: rgba(185, 148, 255, 0.22); stroke: #b994ff; stroke-width: 0.04; cursor: move; }
 .p-appl .led { fill: #3a3d44; pointer-events: none; }
 .p-appl.linked rect { stroke: #6ee7a0; stroke-width: 0.06; }
-.p-appl.sel rect { stroke: #fff; stroke-width: 0.07; }
+.p-appl.sel rect { fill: rgba(90, 150, 255, 0.28); stroke: #6aa6ff; stroke-width: 0.05; }
 .p-ac rect { fill: #5db2ff; stroke: #0a0e1a; stroke-width: 0.04; cursor: move; }
 .p-ac .flow { stroke: #5db2ff; stroke-width: 0.04; stroke-linecap: round; opacity: 0.6; fill: none; pointer-events: none; }
 .p-ac.sel rect { stroke: #fff; stroke-width: 0.07; }

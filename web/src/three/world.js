@@ -23,6 +23,8 @@ const PAN_TILT_MIN = 0.35; // keeps a two-finger drag sane when looking almost a
 export function createWorld(canvas, config, store, {
   onHover, onPick, onLevel = () => {}, onView = () => {}, level: firstLevel,
   background = STAGE_BG, quality = 'high', controls = true,
+  // A camera to start from, as cameraState() reported it (the editor keeps the view while it rebuilds).
+  camera: startCamera = null,
 }) {
   const lowQuality = quality === 'low';
   const transparent = background === null || background === 'transparent' || background === 'none';
@@ -623,6 +625,11 @@ export function createWorld(canvas, config, store, {
       wake();
     },
 
+    // Where the camera is, to start a new view from (see the `camera` option).
+    cameraState() {
+      return { az: home.az, el: home.el, zoom: home.zoom, pan: home.pan.toArray() };
+    },
+
     // Back to the plan's own view, of whatever is in focus.
     resetView() {
       home.az = baseAz;
@@ -692,6 +699,16 @@ export function createWorld(canvas, config, store, {
     return (t.kind === 'ac' ? acs : lights).get(t.id)?.cfg.level;
   }
 
+  if (startCamera) {
+    home.az = startCamera.az;
+    home.el = startCamera.el;
+    home.zoom = startCamera.zoom;
+    home.pan.fromArray(startCamera.pan);
+    rig.goal.az = startCamera.az;
+    rig.goal.el = startCamera.el;
+    rig.zoom = startCamera.zoom;
+    rig.pan.copy(home.pan);
+  }
   syncAll({ instant: true });
   resize();
   updateRig(0, true);

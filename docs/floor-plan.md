@@ -176,6 +176,8 @@ Decoration only. Every piece has `type`, `pos` (`[x, z]` of its centre), an opti
 | `bookshelf` | `width`, `height` |
 | `stairs` | `width`, `depth` (its length), `height` (up to the floor above by default). They climb away from the front |
 | `officeChair` | `color` |
+| `officeCabinet` | `width` (default 0.45), `height` (default 1.2), `color` |
+| `meetingTable` | `width` (default 3.2), `depth` (default 1.4), `chairs` (along both long sides, default 0) |
 | `officeTable` | `width` (default 1.8), `depth` (default 0.9), `chairs` (along both long sides, default 0) |
 
 ## `lights`
@@ -215,7 +217,7 @@ and its status light glows green while it is on. Same fields as `acs`, except th
 | Field | Meaning |
 | --- | --- |
 | `id`, `name`, `room` | As for lights |
-| `type` | `waterDispenser`, `pc` or `tv` |
+| `type` | `waterDispenser`, `pc`, `tv`, `wallSwitch` (a light switch on a wall plate; `y` is the bottom of the plate, `1` by default; `gang` is `1` (default), `2` or `3`) or `wallPlug` (a wall socket, `0.3` by default). Both take `color`: `white` (default) or `black` |
 | `pos` | `[x, z]` of its centre |
 | `rot` | Optional: the angle in degrees |
 | `link` | Link to a switch, light or `media_player` entity (Home Assistant) or to a Hue / Apple Home device |
@@ -226,6 +228,8 @@ and its status light glows green while it is on. Same fields as `acs`, except th
 ```
 
 A `tv` can also stay in `furniture` as plain decoration; the same type in `appliances` is clickable.
+
+A `pc` has no desk of its own. To put it on one, set the appliance's `y` to the desk's height (about `0.74`).
 
 ## `scenes`
 

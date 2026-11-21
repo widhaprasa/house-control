@@ -441,6 +441,8 @@ export const FURNITURE_GUIDE = {
   stairs: 'straight stairs up to the floor above, climbing towards the back (north at rot 0); options width, depth (its length)',
   officeChair: 'office swivel chair; option color',
   officeTable: 'office table; options width (default 1.8), depth (default 0.9), chairs (0–12 along both long sides, default 0)',
+  officeCabinet: 'office filing cabinet with drawers; options width (default 0.45), height (default 1.2), color',
+  meetingTable: 'big meeting table; options width (default 3.2), depth (default 1.4), chairs (0–12 along both long sides, default 0)',
 };
 
 export function furnitureCatalog() {

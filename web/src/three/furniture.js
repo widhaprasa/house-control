@@ -286,17 +286,16 @@ const builders = {
     const led = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.035, 0.01), new THREE.MeshStandardMaterial({ color: '#3a3d44', roughness: 0.4 }));
     led.position.set(0.1, 0.8, 0.175);
     const g = group(
-      // Cabinet with a bottle seat on top.
+      // Cabinet, with a seat on top for the bottle. Every part below starts where the one under it ends.
       at(box(0.32, 0.9, 0.34, body, { r: 0.03 }), 0, 0, 0),
-      at(cyl(0.05, 0.06, 0.02, mat(BLACK), 16), 0, 0.91, 0),
-      // The water bottle, upside down on the cabinet.
-      at(cyl(0.14, 0.14, 0.38, bottle, 24), 0, 1.1, 0),
-      at(cyl(0.05, 0.14, 0.06, bottle, 24), 0, 0.94, 0),
-      // Two taps on the front: hot (red) and cold (blue), with a drip tray.
-      at(cyl(0.012, 0.012, 0.08, steel, 8), -0.06, 0.6, 0.19),
-      at(cyl(0.012, 0.012, 0.08, steel, 8), 0.06, 0.6, 0.19),
-      at(box(0.05, 0.03, 0.03, mat('#d2494c'), { r: 0.008 }), -0.06, 0.66, 0.2),
-      at(box(0.05, 0.03, 0.03, mat('#3d8fd6'), { r: 0.008 }), 0.06, 0.66, 0.2),
+      at(cyl(0.05, 0.06, 0.02, mat(BLACK), 16), 0, 0.9, 0), // seat: 0.90 to 0.92
+      at(cyl(0.14, 0.05, 0.06, bottle, 24), 0, 0.92, 0), // neck: 0.92 to 0.98, narrow at the seat
+      at(cyl(0.14, 0.14, 0.38, bottle, 24), 0, 0.98, 0), // bottle: 0.98 to 1.36
+      // Two taps on the front (its face is at z = 0.17): hot (red) and cold (blue).
+      at(cyl(0.012, 0.012, 0.08, steel, 8), -0.06, 0.6, 0.18),
+      at(cyl(0.012, 0.012, 0.08, steel, 8), 0.06, 0.6, 0.18),
+      at(box(0.05, 0.03, 0.03, mat('#d2494c'), { r: 0.008 }), -0.06, 0.66, 0.18),
+      at(box(0.05, 0.03, 0.03, mat('#3d8fd6'), { r: 0.008 }), 0.06, 0.66, 0.18),
       at(box(0.2, 0.02, 0.1, mat(BLACK, { rough: 0.5 }), { r: 0.008 }), 0, 0.2, 0.22),
       led,
     );
@@ -304,27 +303,61 @@ const builders = {
     return g;
   },
 
-  pc({ width = 1.0 }) {
-    // A desk with a tower, a monitor and a keyboard on it.
-    const wood = mat(WOOD, { rough: 0.55 });
+  wallSwitch({ color = 'white', gang = 1 } = {}) {
+    // A light switch on a wall plate: 1, 2 or 3 gangs (toggles), with an LED that glows green
+    // while its device is on. Its "y" is the bottom of the plate (1 m by default in the editor).
+    const n = Math.min(3, Math.max(1, Math.round(gang)));
+    const dark = color === 'black';
+    const width = 0.07 * n + 0.02; // the plate grows by a gang's width
+    const plate = mat(dark ? '#17181c' : '#f2f2ee', { rough: 0.3 });
+    const toggle = mat(dark ? '#3c3f47' : '#d6d6d0', { rough: 0.4 });
+    const led = new THREE.Mesh(new THREE.BoxGeometry(0.014, 0.014, 0.004), new THREE.MeshStandardMaterial({ color: '#3a3d44', roughness: 0.4 }));
+    led.position.set(width / 2 - 0.02, 0.1, 0.008); // top right of the plate
+    const parts = [at(box(width, 0.12, 0.012, plate, { r: 0.012 }), 0, 0, 0)];
+    for (let i = 0; i < n; i++) {
+      const x = (i - (n - 1) / 2) * 0.07; // one toggle per gang, centred on the plate
+      parts.push(at(box(0.03, 0.05, 0.012, toggle, { r: 0.008 }), x, 0.035, 0.012));
+    }
+    parts.push(led);
+    const g = group(parts);
+    g.userData.led = led;
+    return g;
+  },
+
+  wallPlug({ color = 'white' } = {}) {
+    // A wall socket: a plate with two round sockets and an earth hole, and an LED that glows green
+    // while its device is on. Its "y" is the bottom of the plate (0.3 m by default in the editor).
+    const dark = color === 'black';
+    const plate = mat(dark ? '#17181c' : '#f2f2ee', { rough: 0.3 });
+    const hole = mat('#1b1c21', { rough: 0.6 });
+    const led = new THREE.Mesh(new THREE.BoxGeometry(0.014, 0.014, 0.004), new THREE.MeshStandardMaterial({ color: '#3a3d44', roughness: 0.4 }));
+    led.position.set(0.033, 0.105, 0.008);
+    const parts = [at(box(0.09, 0.12, 0.012, plate, { r: 0.012 }), 0, 0, 0), led];
+    // The three holes, pointing out of the plate (the cylinders are laid along z).
+    for (const [x, y] of [[-0.018, 0.075], [0.018, 0.075], [0, 0.03]]) {
+      const h = at(cyl(0.008, 0.008, 0.006, hole, 12), x, y, 0.006);
+      h.rotation.x = Math.PI / 2;
+      parts.push(h);
+    }
+    const g = group(parts);
+    g.userData.led = led;
+    return g;
+  },
+
+  pc() {
+    // A desktop PC without a desk: the tower, monitor and keyboard stand on y = 0. Set the
+    // appliance's "y" to a desk's height to place it on one.
     const caseMat = mat('#2a2d35', { rough: 0.5 });
     const screen = mat(BLACK, { rough: 0.2 });
     const glow = mat('#2d6fa8', { rough: 0.3, emissive: '#2d6fa8', emissiveIntensity: 0.35 });
-    const monitor = group(
-      at(box(0.56, 0.34, 0.03, screen, { r: 0.012 }), 0, 0.2, 0),
-      at(box(0.5, 0.28, 0.005, glow, { r: 0.008 }), 0, 0.2, 0.017),
-      at(box(0.05, 0.14, 0.05, mat(BLACK), { r: 0.01 }), 0, 0.09, 0),
-      at(box(0.2, 0.012, 0.14, mat(BLACK), { r: 0.005 }), 0, 0.006, 0.02),
-    );
-    monitor.position.set(0, 0.72 + 0.02, -0.18);
     return group(
-      at(box(width, 0.04, 0.6, wood, { r: 0.012 }), 0, 0.72, 0),
-      ...legs(width, 0.6, 0.72, mat(BLACK), 0.06, 0.02),
-      monitor,
-      at(box(0.4, 0.02, 0.14, mat('#3a3d46', { rough: 0.6 }), { r: 0.008 }), 0, 0.75, 0.1),
-      // The tower, standing on the desk at the right.
-      at(box(0.19, 0.42, 0.42, caseMat, { r: 0.015 }), width / 2 - 0.2, 0.74 + 0.21, -0.05),
-      at(box(0.012, 0.06, 0.06, glow, { r: 0.004 }), width / 2 - 0.2 - 0.096, 0.74 + 0.32, -0.05),
+      at(box(0.19, 0.42, 0.42, caseMat, { r: 0.015 }), 0.3, 0, -0.05), // tower
+      at(box(0.012, 0.06, 0.06, glow, { r: 0.004 }), 0.3 - 0.096, 0.1, -0.05), // its front light
+      at(box(0.2, 0.012, 0.14, mat(BLACK), { r: 0.005 }), -0.05, 0, -0.18), // monitor foot
+      at(box(0.05, 0.1, 0.05, mat(BLACK), { r: 0.01 }), -0.05, 0.012, -0.18), // monitor neck
+      at(box(0.56, 0.34, 0.03, screen, { r: 0.012 }), -0.05, 0.11, -0.18), // monitor
+      at(box(0.5, 0.28, 0.005, glow, { r: 0.008 }), -0.05, 0.13, -0.163), // its lit screen
+      at(box(0.4, 0.02, 0.14, mat('#3a3d46', { rough: 0.6 }), { r: 0.008 }), -0.05, 0, 0.1), // keyboard
     );
   },
 
@@ -429,9 +462,9 @@ const builders = {
     return group(parts);
   },
 
-  officeTable({ width = 1.8, depth = 0.9, chairs = 0 }) {
+  officeTable({ width = 1.8, depth = 0.9, chairs = 0, top: topColour = '#cdbf9f' }) {
     // A table with chairs along both long sides (half on each).
-    const top = mat('#cdbf9f', { rough: 0.55 });
+    const top = mat(topColour, { rough: 0.55 });
     const g = group(
       at(box(width, 0.05, depth, top, { r: 0.012 }), 0, 0.73, 0),
       ...legs(width, depth, 0.73, mat(METAL, { rough: 0.3, metal: 0.6 }), 0.08, 0.03),
@@ -448,10 +481,64 @@ const builders = {
     }
     return g;
   },
+  officeCabinet({ width = 0.45, height = 1.2, color = '#8d9399' }) {
+    // A filing cabinet: a metal body with a drawer front and a handle on each drawer.
+    const depth = 0.6;
+    const metal = mat(color, { rough: 0.5, metal: 0.3 });
+    const face = mat('#9ea4ab', { rough: 0.45, metal: 0.3 });
+    const handle = mat('#3a3d44', { rough: 0.4, metal: 0.6 });
+    const drawers = Math.max(2, Math.round(height / 0.3));
+    const h = height / drawers;
+    const parts = [at(box(width, height, depth, metal, { r: 0.012 }), 0, 0, 0)];
+    for (let i = 0; i < drawers; i++) {
+      const y = i * h;
+      parts.push(at(box(width - 0.04, h - 0.04, 0.01, face, { r: 0.006 }), 0, y + 0.02, depth / 2 + 0.005));
+      parts.push(at(box(0.12, 0.014, 0.02, handle, { r: 0.006 }), 0, y + h - 0.06, depth / 2 + 0.015));
+    }
+    return group(parts);
+  },
+
+  meetingTable({ width = 3.2, depth = 1.4, chairs = 0 }) {
+    // A meeting table with a walnut top, a lighter inlay, brass edge trim, a pedestal base and a vase.
+    const walnut = mat('#5a3f2a', { rough: 0.45 });
+    const inlay = mat('#7a5a40', { rough: 0.4 });
+    const brass = mat('#c9a86a', { rough: 0.25, metal: 0.8 });
+    const TOP = 0.74;
+    const parts = [
+      at(box(width, 0.05, depth, walnut, { r: 0.02 }), 0, TOP, 0),
+      at(box(width - 0.36, 0.006, depth - 0.36, inlay, { r: 0.004 }), 0, TOP + 0.05, 0),
+    ];
+    // Brass trim along all four edges, just below the top.
+    const t = 0.02;
+    parts.push(at(box(width + 0.01, t, t, brass), 0, TOP - t, depth / 2), at(box(width + 0.01, t, t, brass), 0, TOP - t, -depth / 2));
+    parts.push(at(box(t, t, depth + 0.01, brass), width / 2, TOP - t, 0), at(box(t, t, depth + 0.01, brass), -width / 2, TOP - t, 0));
+    // Two pedestals, each a column on a round foot.
+    for (const sx of [-1, 1]) {
+      const x = sx * (width / 2 - 0.45);
+      parts.push(at(cyl(0.2, 0.2, 0.03, brass, 24), x, 0, 0));
+      parts.push(at(cyl(0.05, 0.08, TOP - 0.03, brass, 16), x, 0.03, 0));
+    }
+    // A vase in the middle of the table.
+    parts.push(at(cyl(0.045, 0.03, 0.2, mat('#e8e1d2', { rough: 0.3 }), 16), 0, TOP + 0.05, 0));
+    // Chairs along both long sides (half on each), as the office table has them.
+    const perSide = Math.ceil(chairs / 2);
+    for (let i = 0; i < chairs; i++) {
+      const side = i < perSide ? -1 : 1;
+      const j = side < 0 ? i : i - perSide;
+      const count = side < 0 ? perSide : chairs - perSide;
+      const c = builders.officeChair({ color: '#3b2f25' });
+      c.position.set(-width / 2 + width * (j + 0.5) / Math.max(1, count), 0, side * (depth / 2 + 0.4));
+      if (side > 0) c.rotation.y = Math.PI;
+      parts.push(c);
+    }
+    return group(parts);
+  },
 };
 
 // Appliance-only pieces: they only exist as appliances (linked, clickable, with a status light).
-const APPLIANCE_ONLY = ['waterDispenser', 'pc'];
+const APPLIANCE_ONLY = ['waterDispenser', 'pc', 'wallSwitch', 'wallPlug'];
+// The appliances that hang on a wall (the editor snaps them to walls and faces them into the room).
+export const WALL_APPLIANCES = ['wallSwitch', 'wallPlug'];
 export const FURNITURE_TYPES = Object.keys(builders).filter((t) => !APPLIANCE_ONLY.includes(t));
 
 // Pieces with a real on/off state. A TV is both furniture (decoration) and an appliance.
@@ -479,10 +566,14 @@ export function footprint(item) {
     case 'bathtub': return [1.7, 0.78];
     case 'toilet': return [0.4, 0.66];
     case 'waterDispenser': return [0.4, 0.4];
-    case 'pc': return [w || 1, 0.6];
+    case 'pc': return [0.6, 0.45];
+    case 'wallSwitch': return [0.07 * (item.gang || 1) + 0.02, 0.1];
+    case 'wallPlug': return [0.09, 0.1];
     case 'desk': return [w || 1.4, 0.65];
     case 'officeChair': return [0.5, 0.5];
     case 'officeTable': return [w || 1.8, item.depth || 0.9];
+    case 'officeCabinet': return [w || 0.45, 0.6];
+    case 'meetingTable': return [w || 3.2, item.depth || 1.4];
     case 'wardrobe': return [w || 1.6, 0.6];
     case 'bookshelf': return [w || 1, 0.32];
     case 'stairs': return [w || 1, item.depth || 2.8];

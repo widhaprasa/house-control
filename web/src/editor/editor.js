@@ -533,7 +533,7 @@ export async function bootEditor(root, options = {}) {
       return [item.name || item.id, `${hasRounding(item) ? 'rounded · ' : ''}${fix(w)} × ${fix(d)} m`];
     }
     if (kind === 'light') return [item.name || item.id, `${roomName(item.room)} · ${item.type}`];
-    if (kind === 'ac') return [item.name || item.id, `${roomName(item.room)} · ${item.wall} wall`];
+    if (kind === 'ac') return [item.name || item.id, `${roomName(item.room)} · ${item.mount === 'floor' ? 'standing' : item.mount === 'ceiling' ? 'ceiling' : `${item.wall} wall`}`];
     if (kind === 'appliance') return [item.name || item.id, `${roomName(item.room)} · ${item.type}`];
     if (kind === 'furniture') return [item.type, roomName(roomAt(item.pos)?.id) || '—'];
     if (kind === 'opening' && !item.to) return [item.type || 'door', ''];
@@ -590,7 +590,7 @@ export async function bootEditor(root, options = {}) {
     for (let i = 2; ; i++) if (!ids.has(`${base}${i}`)) return `${base}${i}`;
   }
 
-  function add(kind, { type } = {}) {
+  function add(kind, { type, mount } = {}) {
     // On an empty floor the first room is as big as the floor below, ready to be divided.
     if (kind === 'room' && !levelRooms().length && below()) { fillLevel(); return; }
     snapshot();
@@ -608,9 +608,15 @@ export async function bootEditor(root, options = {}) {
       list.push({ id: uniqueId(`${room.id}.light`), name: 'New light', room: room.id, type: 'ceiling', pos: freeSpot(room, center), capabilities: [] });
     } else if (kind === 'ac') {
       if (!room) return toast('Add a room first', true);
-      const ac = { id: uniqueId(`${room.id}.ac`), name: `${room.name} AC`, room: room.id, wall: 'north', pos: [...center], y: 2.2 };
-      snapAC(ac, [center[0], roomBounds(room)[1]], room);
-      list.push(ac);
+      if (mount === 'floor' || mount === 'ceiling') {
+        // A standing unit goes against a wall; a ceiling cassette goes in the middle of the room.
+        const pos = mount === 'floor' ? applianceSpot(room, center) : [...center];
+        list.push({ id: uniqueId(`${room.id}.ac`), name: `${room.name} ${mount === 'floor' ? 'standing AC' : 'ceiling AC'}`, room: room.id, mount, wall: 'north', pos, ...(mount === 'floor' ? { rot: 0 } : {}) });
+      } else {
+        const ac = { id: uniqueId(`${room.id}.ac`), name: `${room.name} AC`, room: room.id, wall: 'north', pos: [...center], y: 2.2 };
+        snapAC(ac, [center[0], roomBounds(room)[1]], room);
+        list.push(ac);
+      }
     } else if (kind === 'appliance') {
       if (!room) return toast('Add a room first', true);
       list.push({ id: uniqueId(`${room.id}.appliance`), name: 'New appliance', room: room.id, type: type || 'waterDispenser', pos: applianceSpot(room, center), rot: 0 });
@@ -695,7 +701,8 @@ export async function bootEditor(root, options = {}) {
   // Turns furniture or a lamp a quarter (or, with `step`, a little).
   function rotate(step = 90) {
     const item = sel.index != null ? doc[KEYS[sel.kind]]?.[sel.index] : null;
-    if (!item || !['furniture', 'light', 'appliance'].includes(sel.kind)) return;
+    const standing = sel.kind === 'ac' && item?.mount === 'floor';
+    if (!item || !(['furniture', 'light', 'appliance'].includes(sel.kind) || standing)) return;
     snapshot(`rotate${sel.kind}${sel.index}`);
     item.rot = (((item.rot || 0) + step) % 360 + 540) % 360 - 180;
     touch();
@@ -1043,13 +1050,26 @@ export async function bootEditor(root, options = {}) {
 
     doc.acs.forEach((a, i) => {
       if (!here('ac', a)) return;
-      const rot = Number.isFinite(a.rot) ? a.rot : ({ north: 0, east: 90, south: 180, west: 270 }[a.wall] || 0);
-      kids.push(sv('g', {
-        class: `p-ac${isSel('ac', i) ? ' sel' : ''}`, 'data-kind': 'ac', 'data-index': i,
-        transform: `translate(${a.pos[0]} ${a.pos[1]}) rotate(${rot})`,
-      }, big ? sv('rect', { x: -0.62, y: -0.12, width: 1.24, height: 0.74, class: 'hit' }) : null,
-        sv('rect', { x: -0.47, y: 0.08, width: 0.94, height: 0.24, rx: 0.07 }),
-        sv('path', { d: 'M-0.3 0.42v0.22M0 0.42v0.3M0.3 0.42v0.22', class: 'flow' })));
+      // The plan turns the other way from the 3D model, so an own angle is negated (as furniture does).
+      const rot = Number.isFinite(a.rot) ? -a.rot : ({ north: 0, east: 90, south: 180, west: 270 }[a.wall] || 0);
+      const cls = `p-ac${a.mount === 'floor' || a.mount === 'ceiling' ? ` p-ac-${a.mount}` : ''}${isSel('ac', i) ? ' sel' : ''}`;
+      // The footprint of each mount, in metres, centred on the unit: a wall unit is a strip
+      // in front of the wall, a standing unit a box against it, a ceiling cassette a square.
+      if (a.mount === 'floor') {
+        kids.push(sv('g', { class: cls, 'data-kind': 'ac', 'data-index': i, transform: `translate(${a.pos[0]} ${a.pos[1]}) rotate(${rot})` },
+          big ? sv('rect', { x: -0.55, y: -0.28, width: 1.1, height: 0.56, class: 'hit' }) : null,
+          sv('rect', { x: -0.45, y: -0.2, width: 0.9, height: 0.4, rx: 0.06 }),
+          sv('path', { d: 'M-0.3 0.2v0.14M0 0.2v0.18M0.3 0.2v0.14', class: 'flow' })));
+      } else if (a.mount === 'ceiling') {
+        kids.push(sv('g', { class: cls, 'data-kind': 'ac', 'data-index': i, transform: `translate(${a.pos[0]} ${a.pos[1]}) rotate(${rot})` },
+          big ? sv('rect', { x: -0.6, y: -0.6, width: 1.2, height: 1.2, class: 'hit' }) : null,
+          sv('rect', { x: -0.45, y: -0.45, width: 0.9, height: 0.9, rx: 0.08 })));
+      } else {
+        kids.push(sv('g', { class: cls, 'data-kind': 'ac', 'data-index': i, transform: `translate(${a.pos[0]} ${a.pos[1]}) rotate(${rot})` },
+          big ? sv('rect', { x: -0.62, y: -0.12, width: 1.24, height: 0.74, class: 'hit' }) : null,
+          sv('rect', { x: -0.47, y: 0.08, width: 0.94, height: 0.24, rx: 0.07 }),
+          sv('path', { d: 'M-0.3 0.42v0.22M0 0.42v0.3M0.3 0.42v0.22', class: 'flow' })));
+      }
     });
 
     // Appliances: a water dispenser, a PC or a TV. Green outline when linked to a real device.
@@ -1467,7 +1487,13 @@ export async function bootEditor(root, options = {}) {
         item.to = [fix(drag.to[0] + dx), fix(drag.to[1] + dz)];
       } else placeOpening(item, mid, len); // doors and windows slide along the walls, and jump to the nearest one
     } else if (drag.kind === 'ac') {
-      snapAC(doc.acs[drag.index], [px, pz]);
+      const ac = doc.acs[drag.index];
+      if (ac.mount === 'floor' || ac.mount === 'ceiling') {
+        // Standing and ceiling units go where they are dropped, and join the room they land in.
+        ac.pos = [fix(px), fix(pz)];
+        const room = roomAt(ac.pos);
+        if (room) ac.room = room.id;
+      } else snapAC(ac, [px, pz]);
     } else {
       const item = doc[KEYS[drag.kind]][drag.index];
       item.pos = [fix(drag.pos[0] + dx), fix(drag.pos[1] + dz)];
@@ -1813,11 +1839,23 @@ export async function bootEditor(root, options = {}) {
       nodes.push(section('Air conditioner',
         bind('Name', text(), prop(item, 'name', '')),
         row(bind('Room', choice(doc.rooms.map((r) => [r.id, r.name || r.id])), { ...prop(item, 'room'), event: 'change' }),
-          bind('Mounted on wall', choice(WALLS), {
+          bind('Mount', choice([['wall', 'On a wall'], ['floor', 'Standing'], ['ceiling', 'Ceiling']]), {
+            get: () => item.mount || 'wall',
+            set: (v) => {
+              item.mount = v;
+              item.y = { wall: 2.2, floor: 0, ceiling: 2.25 }[v];
+              if (v === 'wall') { item.wall ||= 'north'; delete item.rot; } else if (!Number.isFinite(item.rot)) item.rot = v === 'floor' ? 0 : undefined;
+              if (item.rot === undefined) delete item.rot;
+            },
+            event: 'change',
+          })),
+        (item.mount || 'wall') === 'wall'
+          ? row(bind('Mounted on wall', choice(WALLS), {
             get: () => item.wall || 'north',
             set: (v) => { item.wall = v; delete item.rot; },
             event: 'change',
-          }))),
+          }))
+          : null),
       section('Position, m',
         row(bind('X', number(), { ...at(item, 'pos', 0), parse: parseNum }), bind('Z', number(), { ...at(item, 'pos', 1), parse: parseNum })),
         row(bind('Height', number(), { ...prop(item, 'y', 2.2), parse: parseNum }),
@@ -2422,7 +2460,8 @@ export async function bootEditor(root, options = {}) {
       },
       headActions() {
         const nodes = [];
-        if (sel.kind === 'furniture' || sel.kind === 'appliance' || (sel.kind === 'light' && doc.lights[sel.index]?.type === 'strip')) {
+        if (sel.kind === 'furniture' || sel.kind === 'appliance' || (sel.kind === 'ac' && doc.acs[sel.index]?.mount === 'floor')
+          || (sel.kind === 'light' && doc.lights[sel.index]?.type === 'strip')) {
           nodes.push(h('button.p-icon', { 'aria-label': 'Turn 90°', onclick: () => { haptic('light'); rotate(90); } }, icon('rotateCw', 18, 2)));
         }
         if (sel.index != null) {

@@ -5,6 +5,7 @@ import { APPLIANCE_TYPES } from './three/furniture.js';
 
 const LIGHT_TYPES = ['ceiling', 'pendant', 'spots', 'floor', 'table', 'strip'];
 const WALLS = ['north', 'south', 'east', 'west'];
+const ACS_MOUNTS = ['wall', 'floor', 'ceiling'];
 
 export class ConfigError extends Error {}
 
@@ -145,8 +146,16 @@ export function normalize(raw) {
     unique(a.id, 'An AC');
     need(roomIds.has(a.room), `AC "${a.id}" refers to unknown room "${a.room}"`);
     need(isPoint(a.pos), `AC "${a.id}" needs "pos": [x, z]`);
-    need(WALLS.includes(a.wall), `AC "${a.id}" needs "wall": one of ${WALLS.join(', ')}`);
-    return { ...a, name: a.name || a.id, y: a.y ?? 2.2, min: a.min ?? 16, max: a.max ?? 30, level: roomLevel.get(a.room) };
+    // "mount": wall (default, hangs on a wall), floor (a standing tower) or ceiling (a cassette).
+    const mount = a.mount || 'wall';
+    need(ACS_MOUNTS.includes(mount), `AC "${a.id}" has unknown "mount" "${mount}" (use ${ACS_MOUNTS.join(', ')})`);
+    if (mount === 'wall') need(WALLS.includes(a.wall), `AC "${a.id}" needs "wall": one of ${WALLS.join(', ')}`);
+    else if (a.wall != null) need(WALLS.includes(a.wall), `AC "${a.id}" has an unknown "wall" "${a.wall}"`);
+    const level = roomLevel.get(a.room);
+    // Where it is by default: on a wall at 2.2 m, on the floor, or just under the ceiling.
+    const ceiling = (levels.find((l) => l.id === level)?.wallHeight ?? wallHeight) - 0.35;
+    const y = a.y ?? (mount === 'floor' ? 0 : mount === 'ceiling' ? ceiling : 2.2);
+    return { ...a, mount, name: a.name || a.id, y, min: a.min ?? 16, max: a.max ?? 30, level };
   });
 
   const scenes = (raw.scenes || []).map((s) => {

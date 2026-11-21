@@ -1,4 +1,6 @@
-// Wall-mounted AC unit with an animated airflow made of additive streaks.
+// Air conditioner with an animated airflow made of additive streaks. Three mounts:
+// "wall" (the default: hangs on a wall), "floor" (a standing tower) and "ceiling" (a cassette
+// that blows straight down).
 import * as THREE from 'three';
 import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
@@ -16,6 +18,7 @@ export const MODE_COLORS = {
 const FAN_SPEED = { auto: 0.42, low: 0.26, medium: 0.42, high: 0.62, turbo: 0.9 };
 const SWING_ANGLE = { l1: 12, l2: 24, l3: 38, l4: 52, l5: 66, off: 38 };
 const WALL_ROT = { north: 0, south: Math.PI, west: Math.PI / 2, east: -Math.PI / 2 };
+const DOWN = 80; // a ceiling unit blows almost straight down
 
 const STREAKS = 72;
 const REACH = 2.5;
@@ -25,35 +28,61 @@ export class ACUnit {
   constructor(cfg) {
     this.cfg = cfg;
     this.id = cfg.id;
+    this.mount = cfg.mount || 'wall';
 
     this.group = new THREE.Group();
     this.group.position.set(cfg.pos[0], cfg.y, cfg.pos[1]);
     // A unit on a diagonal or round wall carries its own angle; otherwise the wall says it.
-    this.group.rotation.y = Number.isFinite(cfg.rot) ? THREE.MathUtils.degToRad(cfg.rot) : WALL_ROT[cfg.wall];
+    this.group.rotation.y = Number.isFinite(cfg.rot) ? THREE.MathUtils.degToRad(cfg.rot) : WALL_ROT[cfg.wall || 'north'];
 
     const body = new THREE.Group();
-    body.position.z = 0.1 + 0.105; // sit on the inner face of the wall
     const shell = mat('#f3f4f6', { rough: 0.35 });
     this.led = new THREE.MeshStandardMaterial({ color: '#30343c', emissive: '#000000', roughness: 0.4 });
     this.flap = box(0.8, 0.012, 0.075, mat('#e3e5e9', { rough: 0.35 }), { r: 0.004 });
     this.flapPivot = new THREE.Group();
-    this.flapPivot.position.set(0, -0.145, 0.03);
-    this.flap.position.set(0, -0.006, 0.0375);
     this.flapPivot.add(this.flap);
-    body.add(
-      at(box(0.94, 0.29, 0.21, shell, { r: 0.05 }), 0, -0.145, 0),
-      at(box(0.82, 0.03, 0.09, mat('#17191d', { rough: 0.6 }), { r: 0.006 }), 0, -0.16, 0.055),
-      at(box(0.9, 0.004, 0.006, mat('#c9ccd2'), { r: 0 }), 0, 0.02, 0.105),
-      at(box(0.085, 0.022, 0.006, this.led, { r: 0.003 }), 0.34, -0.06, 0.105),
-      this.flapPivot,
-    );
+    this.flap.position.set(0, -0.006, 0.0375);
+
+    if (this.mount === 'floor') {
+      // A tower standing on the floor, its outlet at the top front.
+      body.position.z = 0.22; // a little off the wall
+      this.flapPivot.position.set(0, 1.5, 0.2);
+      body.add(
+        at(box(0.9, 1.7, 0.4, shell, { r: 0.06 }), 0, 0, 0), // stands on the floor (y = 0)
+        at(box(0.84, 0.06, 0.3, mat('#17191d', { rough: 0.6 }), { r: 0.01 }), 0, 0, 0.02),
+        at(box(0.9, 0.004, 0.006, mat('#c9ccd2'), { r: 0 }), 0, 1.36, 0.205),
+        at(box(0.085, 0.022, 0.006, this.led, { r: 0.003 }), 0.34, 1.25, 0.205),
+        this.flapPivot,
+      );
+    } else if (this.mount === 'ceiling') {
+      // A flat cassette in the ceiling, with a grille underneath. The flap is not needed.
+      body.position.z = 0;
+      this.flapPivot.position.set(0, -0.12, 0);
+      this.flap.visible = false;
+      body.add(
+        at(box(0.9, 0.2, 0.9, shell, { r: 0.05 }), 0, 0, 0), // hangs from the ceiling: 0..0.2 above its mount
+        at(box(0.7, 0.02, 0.7, mat('#17191d', { rough: 0.6 }), { r: 0.006 }), 0, -0.02, 0), // grille under the cassette
+        at(box(0.085, 0.022, 0.006, this.led, { r: 0.003 }), 0.34, 0.09, 0.455),
+        this.flapPivot,
+      );
+    } else {
+      body.position.z = 0.1 + 0.105; // sit on the inner face of the wall
+      this.flapPivot.position.set(0, -0.145, 0.03);
+      body.add(
+        at(box(0.94, 0.29, 0.21, shell, { r: 0.05 }), 0, -0.145, 0),
+        at(box(0.82, 0.03, 0.09, mat('#17191d', { rough: 0.6 }), { r: 0.006 }), 0, -0.16, 0.055),
+        at(box(0.9, 0.004, 0.006, mat('#c9ccd2'), { r: 0 }), 0, 0.02, 0.105),
+        at(box(0.085, 0.022, 0.006, this.led, { r: 0.003 }), 0.34, -0.06, 0.105),
+        this.flapPivot,
+      );
+    }
     body.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
     this.group.add(body);
     this.body = body;
 
     // Soft coloured wash so the mode reads on the wall and floor.
     this.wash = new THREE.PointLight(0xffffff, 0, 3.4, 2);
-    this.wash.position.set(0, -0.5, 0.75);
+    this.wash.position.set(0, this.mount === 'floor' ? 0.6 : this.mount === 'ceiling' ? -0.4 : -0.5, this.mount === 'floor' ? 0.9 : 0.75);
     this.group.add(this.wash);
 
     // Fat lines (screen-space width) so the streaks stay readable over lit walls.
@@ -68,8 +97,10 @@ export class ACUnit {
       linewidth: 2.4, vertexColors: true, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, toneMapped: false,
     }));
     this.flow.frustumCulled = false;
-    this.flow.position.z = 0.1 + 0.15;
-    this.flow.position.y = -0.17;
+    // Where the air leaves the unit, in its own frame.
+    if (this.mount === 'floor') this.flow.position.set(0, 1.5, 0.45);
+    else if (this.mount === 'ceiling') this.flow.position.set(0, -0.2, 0);
+    else this.flow.position.set(0, -0.17, 0.25);
     // The floor in the flow's own frame: a unit mounted low (a heater at knee height) would
     // otherwise blow its air straight through it.
     this.floorY = FLOOR_CLEARANCE - (cfg.y + this.flow.position.y);
@@ -83,8 +114,12 @@ export class ACUnit {
       wobble: (i * 2.399) % (Math.PI * 2),
     }));
 
-    this.hit = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.6, 0.6), new THREE.MeshBasicMaterial());
-    this.hit.position.set(0, -0.15, 0.25);
+    // The invisible box a click lands on, sized to the body.
+    const hit = this.mount === 'floor' ? { size: [0.95, 1.75, 0.5], at: [0, 0.85, 0.22] }
+      : this.mount === 'ceiling' ? { size: [0.95, 0.3, 0.95], at: [0, -0.05, 0] }
+        : { size: [1.2, 0.6, 0.6], at: [0, -0.15, 0.25] };
+    this.hit = new THREE.Mesh(new THREE.BoxGeometry(...hit.size), new THREE.MeshBasicMaterial());
+    this.hit.position.set(...hit.at);
     this.hit.visible = false;
     this.hit.userData = { kind: 'ac', id: cfg.id };
     this.group.add(this.hit);
@@ -121,9 +156,9 @@ export class ACUnit {
     this.hover += (this.hoverGoal - this.hover) * (1 - Math.exp(-dt * 14));
     this.clock += dt;
 
-    const target = this.swing === 'swing'
-      ? 38 + Math.sin(this.clock * 0.9) * 26
-      : SWING_ANGLE[this.swing] ?? 38;
+    const target = this.mount === 'ceiling' ? DOWN
+      : this.swing === 'swing' ? 38 + Math.sin(this.clock * 0.9) * 26
+        : SWING_ANGLE[this.swing] ?? 38;
     this.angle += (target - this.angle) * (1 - Math.exp(-dt * 4));
 
     this.flapPivot.rotation.x = THREE.MathUtils.degToRad(this.angle * 0.9 + 10) * this.power;

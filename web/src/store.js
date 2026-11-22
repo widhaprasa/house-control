@@ -26,11 +26,11 @@ export function createStore(config) {
   const lightCfg = new Map(config.lights.map((l) => [l.id, l]));
   const acCfg = new Map(config.acs.map((a) => [a.id, a]));
 
-  const state = { lights: {}, acs: {}, appliances: {}, scene: null };
+  const state = { lights: {}, acs: {}, equipment: {}, scene: null };
   for (const l of config.lights) state.lights[l.id] = defaultLight(l);
   for (const a of config.acs) state.acs[a.id] = defaultAC(a, config.outdoorTemp);
-  // Appliances: a real on/off device (a water dispenser, a PC, a TV). Only `on` is kept.
-  for (const p of config.appliances) state.appliances[p.id] = { on: false };
+  // Equipment: a real on/off device (a water dispenser, a PC, a TV). Only `on` is kept.
+  for (const p of config.equipment) state.equipment[p.id] = { on: false };
   // What each real AC can do, as reported by the native side. A simulated AC can do everything.
   const features = {};
 
@@ -40,7 +40,7 @@ export function createStore(config) {
     if (saved && saved.home === config.name) {
       for (const [id, s] of Object.entries(saved.lights || {})) if (state.lights[id]) Object.assign(state.lights[id], s);
       for (const [id, s] of Object.entries(saved.acs || {})) if (state.acs[id]) Object.assign(state.acs[id], s);
-      for (const [id, s] of Object.entries(saved.appliances || {})) if (state.appliances[id]) Object.assign(state.appliances[id], s);
+      for (const [id, s] of Object.entries(saved.equipment || {})) if (state.equipment[id]) Object.assign(state.equipment[id], s);
       for (const [id, f] of Object.entries(saved.features || {})) if (state.acs[id]) features[id] = f;
       state.scene = saved.scene || null;
       restored = true;
@@ -64,14 +64,14 @@ export function createStore(config) {
       post('summary', summary());
       // The native shell passes this on to its other views of the same home (the panel
       // and the island each run their own store), which adopt it without re-sending.
-      if (!change.adopted) post('state', { lights: state.lights, acs: state.acs, appliances: state.appliances, scene: state.scene, source: change.source ?? store.source ?? null });
+      if (!change.adopted) post('state', { lights: state.lights, acs: state.acs, equipment: state.equipment, scene: state.scene, source: change.source ?? store.source ?? null });
     }
   }
 
   // One command per device is in flight at a time. Whatever changes meanwhile is merged
   // into a single follow-up, so dragging a slider costs a couple of requests (or infrared
   // key presses) instead of dozens. A change the device refuses is rolled back.
-  const COOL_DOWN = { light: 300, ac: 900, appliance: 300 };
+  const COOL_DOWN = { light: 300, ac: 900, equipment: 300 };
   const outbox = new Map();
 
   function transmit(kind, id, patch) {
@@ -84,7 +84,7 @@ export function createStore(config) {
 
   // The state map a command kind writes to.
   function stateOf(kind) {
-    return kind === 'light' ? state.lights : kind === 'ac' ? state.acs : state.appliances;
+    return kind === 'light' ? state.lights : kind === 'ac' ? state.acs : state.equipment;
   }
 
   function dispatch(kind, id, patch, before) {
@@ -152,12 +152,12 @@ export function createStore(config) {
     return true;
   }
 
-  function writeAppliance(id, patch, { remote = false } = {}) {
-    const cur = state.appliances[id];
+  function writeEquipment(id, patch, { remote = false } = {}) {
+    const cur = state.equipment[id];
     if (!cur || typeof patch.on !== 'boolean' || cur.on === patch.on) return false;
     const before = { on: cur.on };
     cur.on = patch.on;
-    if (!remote) dispatch('appliance', id, { on: patch.on }, before);
+    if (!remote) dispatch('equipment', id, { on: patch.on }, before);
     return true;
   }
 
@@ -221,10 +221,10 @@ export function createStore(config) {
     },
     toggleLight(id) { store.setLight(id, { on: !state.lights[id].on }); },
 
-    setAppliance(id, on) {
-      if (writeAppliance(id, { on })) emit({ type: 'appliance', id });
+    setEquipment(id, on) {
+      if (writeEquipment(id, { on })) emit({ type: 'equipment', id });
     },
-    toggleAppliance(id) { store.setAppliance(id, !state.appliances[id].on); },
+    toggleEquipment(id) { store.setEquipment(id, !state.equipment[id].on); },
 
     setAllLights(on) {
       let any = false;
@@ -277,7 +277,7 @@ export function createStore(config) {
       let any = false;
       for (const [id, s] of Object.entries(other.lights || {})) any = writeLight(id, s, { remote: true }) || any;
       for (const [id, s] of Object.entries(other.acs || {})) any = writeAC(id, s, { remote: true }) || any;
-      for (const [id, s] of Object.entries(other.appliances || {})) any = writeAppliance(id, s, { remote: true }) || any;
+      for (const [id, s] of Object.entries(other.equipment || {})) any = writeEquipment(id, s, { remote: true }) || any;
       const scene = other.scene ?? null;
       if (scene !== state.scene) { state.scene = scene; any = true; }
       if (any) emit({ type: 'bulk', remote: true, adopted: true, source: other.source || null });
@@ -288,7 +288,7 @@ export function createStore(config) {
       let any = false;
       for (const [id, patch] of Object.entries(update.lights || {})) any = writeLight(id, patch, { remote: true }) || any;
       for (const [id, patch] of Object.entries(update.acs || {})) any = writeAC(id, patch, { remote: true }) || any;
-      for (const [id, patch] of Object.entries(update.appliances || {})) any = writeAppliance(id, patch, { remote: true }) || any;
+      for (const [id, patch] of Object.entries(update.equipment || {})) any = writeEquipment(id, patch, { remote: true }) || any;
       for (const [id, f] of Object.entries(update.features || {})) {
         if (!state.acs[id] || JSON.stringify(features[id]) === JSON.stringify(f)) continue;
         features[id] = f;

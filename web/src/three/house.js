@@ -200,6 +200,40 @@ export function buildHouse(config, level = config.levels[0]) {
     if (type === 'door' || type === 'open') continue;
 
     const height = exterior ? H : Hi;
+    if (type === 'fence2') {
+      // A modern steel fence across the gap: black steel bars, two rails, and a cap on every fourth bar.
+      const FH = 1.0;
+      const steel = new THREE.MeshStandardMaterial({ color: '#1f2226', roughness: 0.35, metalness: 0.7 });
+      const len = b - a;
+      piece(s, a, b, 0.1, 0.14, 0.03, steel, parent);
+      piece(s, a, b, 0.92, 0.96, 0.03, steel, parent);
+      const bars = Math.max(2, Math.floor(len / 0.12));
+      for (let k = 0; k < bars; k++) {
+        const x = a + (len * k) / (bars - 1);
+        piece(s, x - 0.01, x + 0.01, 0.14, 0.96, 0.02, steel, parent);
+        if (k % 4 === 0) piece(s, x - 0.02, x + 0.02, 0.96, FH, 0.04, steel, parent);
+      }
+      continue;
+    }
+    if (type === 'fence') {
+      // A garden fence across the gap, 1 m high: posts every metre, two rails and pickets between them.
+      const FH = 1.0;
+      const wood = new THREE.MeshStandardMaterial({ color: '#b08a5c', roughness: 0.8 });
+      const len = b - a;
+      const posts = Math.max(1, Math.round(len));
+      for (let i = 0; i <= posts; i++) {
+        const x = a + (len * i) / posts;
+        piece(s, x - 0.035, x + 0.035, 0, FH, 0.07, wood, parent);
+      }
+      piece(s, a, b, 0.3, 0.36, 0.03, wood, parent);
+      piece(s, a, b, 0.7, 0.76, 0.03, wood, parent);
+      const pickets = Math.max(1, Math.floor(len / 0.1));
+      for (let k = 0; k < pickets; k++) {
+        const x = a + 0.05 + (k * (len - 0.1)) / Math.max(1, pickets - 1);
+        piece(s, x - 0.03, x + 0.03, 0.1, FH, 0.02, wood, parent);
+      }
+      continue;
+    }
     if (type === 'glass') {
       // A glass wall: a clear panel from the floor to the ceiling, with a thin frame at its ends and top.
       const pane = piece(s, a, b, 0, H, 0.03, glass, parent);

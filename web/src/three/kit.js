@@ -120,11 +120,25 @@ function tiles(base, perSide, grout) {
   });
 }
 
+// Grass for an outdoor room: a green ground with darker and lighter tufts.
+function grass() {
+  return canvasTexture(512, (g, s) => {
+    const rand = rng(7);
+    g.fillStyle = '#6f9a4e';
+    g.fillRect(0, 0, s, s);
+    for (let i = 0; i < 3000; i++) {
+      g.fillStyle = rand() < 0.5 ? '#5d8a40' : '#86b060';
+      g.fillRect(rand() * s, rand() * s, 2, 2 + rand() * 4);
+    }
+  });
+}
+
 const FLOORS = {
   oak: () => planks('#c7a47c'),
   walnut: () => planks('#94705a'),
   tile: () => tiles('#d5dade', 4, '#aab0b8'),
   stone: () => tiles('#a2a7ae', 3, '#7c828b'),
+  grass: () => grass(),
 };
 
 const floorMaterials = new Map();

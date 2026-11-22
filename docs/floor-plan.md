@@ -109,7 +109,7 @@ draws the floor below faintly so walls and stairs line up. Stairs are furniture 
 | `rect` | `[x, z, width, depth]` — the room, or its bounding box when it is not a rectangle |
 | `points` | Optional: the corners of a diagonal room, `[[x, z], [x, z], …]`, in order. Three or more |
 | `radii` | Optional: one corner radius per corner, in metres (`0` is square). Matches `points`, or for a rectangle the four corners north-west, north-east, south-east, south-west. All four at half a wall make a circle |
-| `floor` | `oak`, `walnut`, `tile` or `stone` |
+| `floor` | `oak`, `walnut`, `tile`, `stone` or `grass` (an outdoor room, a lawn) |
 | `level` | The floor (storey) it is on, on a home with [several](#levels-floors) |
 
 Where two rooms share an edge, an inner wall appears on its own; make an L-shaped room out of two. A diagonal
@@ -142,7 +142,7 @@ and windows need a straight stretch as long as the opening.
 
 | Field | Meaning |
 | --- | --- |
-| `type` | `door`, `window`, `open` (a doorway without a door, or a missing piece of wall) or `glass` (a glass wall, floor to ceiling, with a thin frame) |
+| `type` | `door`, `window`, `open` (a doorway without a door, or a missing piece of wall) `glass` (a glass wall, floor to ceiling, with a thin frame) or `fence` (a wood garden fence, 1 m high) or `fence2` (a modern black steel fence with a pattern, 1 m high), across the gap |
 | `from`, `to` | `[x, z]` end points |
 | `sill`, `head` | Bottom and top of a window. Defaults `0.85` and `2.1` |
 | `level` | Its floor, on a home with [several](#levels-floors) |
@@ -209,7 +209,7 @@ Decoration only. Every piece has `type`, `pos` (`[x, z]` of its centre), an opti
 | `link`, `tuya` | Link to a real device — see below |
 | `sensor` | A thermometer for the room — see below |
 
-## `appliances`
+## `equipment`
 
 Things with a real on/off state: a water dispenser, a PC or a TV. Each one is clickable in 3D and in the panel,
 and its status light glows green while it is on. Same fields as `acs`, except that there is no `wall`.
@@ -228,9 +228,9 @@ and its status light glows green while it is on. Same fields as `acs`, except th
   "pos": [4.2, 1.1], "rot": 180, "link": { "service": "homeassistant", "id": "switch.water_dispenser" } }
 ```
 
-A `tv` can also stay in `furniture` as plain decoration; the same type in `appliances` is clickable.
+A `tv` can also stay in `furniture` as plain decoration; the same type in `equipment` is clickable.
 
-A `pc` has no desk of its own. To put it on one, set the appliance's `y` to the desk's height (about `0.74`).
+A `pc` has no desk of its own. To put it on one, set the equipment's `y` to the desk's height (about `0.74`).
 
 ## `scenes`
 

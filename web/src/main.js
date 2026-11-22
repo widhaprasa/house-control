@@ -87,7 +87,7 @@ async function boot() {
         if (!target) return;
         if (target.kind === 'light') { haptic('light'); store.toggleLight(target.id); }
         else if (target.kind === 'ac') panel.openSheet(target);
-        else if (target.kind === 'appliance') { haptic('light'); store.toggleAppliance(target.id); }
+        else if (target.kind === 'equipment') { haptic('light'); store.toggleEquipment(target.id); }
         else if (target.kind === 'room') panel.selectRoom(target.id);
       },
     });

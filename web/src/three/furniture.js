@@ -399,7 +399,7 @@ const builders = {
 
   pc() {
     // An iMac-style all-in-one: a white display on a thin stand, with a keyboard in front. The parts stand
-    // on y = 0; set the appliance's "y" to a desk's height to place it on one.
+    // on y = 0; set the equipment's "y" to a desk's height to place it on one.
     const white = mat('#e6e8ec', { rough: 0.3, metal: 0.1 });
     const dark = mat('#101216', { rough: 0.2 });
     const glass = mat('#15243a', { rough: 0.15, emissive: '#2d6fa8', emissiveIntensity: 0.25 });
@@ -415,7 +415,7 @@ const builders = {
 
   laptop() {
     // A laptop like a MacBook: a silver base with a keyboard and trackpad, and a lid tilted a little
-    // back. Set the appliance's "y" to a desk's height to place it on one.
+    // back. Set the equipment's "y" to a desk's height to place it on one.
     const silver = mat('#c9ccd2', { rough: 0.3, metal: 0.5 });
     const dark = mat('#101216', { rough: 0.25 });
     const lid = new THREE.Group();
@@ -435,7 +435,7 @@ const builders = {
 
   rackServer() {
     // A server rack: a black cabinet with five rack-mounted servers across the front, each with a status LED.
-    // The parts stand on y = 0; set the appliance's "y" if it should stand higher.
+    // The parts stand on y = 0; set the equipment's "y" if it should stand higher.
     const frame = mat('#1d1f24', { rough: 0.5, metal: 0.3 });
     const unit = mat('#3a3f4a', { rough: 0.4, metal: 0.4 });
     const lit = mat('#3dd68c', { rough: 0.3, emissive: '#3dd68c', emissiveIntensity: 0.8 });
@@ -641,14 +641,14 @@ const builders = {
   },
 };
 
-// Appliance-only pieces: they only exist as appliances (linked, clickable, with a status light).
-const APPLIANCE_ONLY = ['waterDispenser', 'pc', 'laptop', 'rackServer', 'printer', 'wallSwitch', 'wallPlug', 'cctvDome', 'cctvBullet', 'tvWall'];
-// The appliances that hang on a wall (the editor snaps them to walls and faces them into the room).
-export const WALL_APPLIANCES = ['wallSwitch', 'wallPlug'];
-export const FURNITURE_TYPES = Object.keys(builders).filter((t) => !APPLIANCE_ONLY.includes(t));
+// Equipment-only pieces: they only exist as equipment (linked, clickable, with a status light).
+const EQUIPMENT_ONLY = ['waterDispenser', 'pc', 'laptop', 'rackServer', 'printer', 'wallSwitch', 'wallPlug', 'cctvDome', 'cctvBullet', 'tvWall'];
+// The equipment that hang on a wall (the editor snaps them to walls and faces them into the room).
+export const WALL_EQUIPMENT = ['wallSwitch', 'wallPlug'];
+export const FURNITURE_TYPES = Object.keys(builders).filter((t) => !EQUIPMENT_ONLY.includes(t));
 
-// Pieces with a real on/off state. A TV is both furniture (decoration) and an appliance.
-export const APPLIANCE_TYPES = [...APPLIANCE_ONLY, 'tv'];
+// Pieces with a real on/off state. A TV is both furniture (decoration) and an equipment.
+export const EQUIPMENT_TYPES = [...EQUIPMENT_ONLY, 'tv'];
 
 // Approximate [width, depth] of each piece, for the 2D plan editor.
 export function footprint(item) {
@@ -693,11 +693,11 @@ export function footprint(item) {
   }
 }
 
-// Colours an appliance's outline and LED can glow in (a name from here, or any "#rrggbb").
+// Colours an equipment's outline and LED can glow in (a name from here, or any "#rrggbb").
 export const GLOW_COLORS = { warm: '#ffd27a', blue: '#4da3ff', white: '#ffffff', orange: '#ff9a3d', red: '#ff4d4d', purple: '#b07cff' };
 const glowColor = (value) => GLOW_COLORS[value] || (/^#[0-9a-f]{6}$/i.test(value || '') ? value : GLOW_COLORS.warm);
 
-// Shows whether a linked appliance's device is on: its outline lights up in its glow colour,
+// Shows whether a linked equipment's device is on: its outline lights up in its glow colour,
 // and its LED (where it has one) glows the same.
 export function setFurnitureStatus(root, id, on) {
   for (const g of root.children) {
@@ -712,7 +712,7 @@ export function setFurnitureStatus(root, id, on) {
   }
 }
 
-// An appliance's outline: a glowing shell round each part of the piece, so the light follows its real
+// An equipment's outline: a glowing shell round each part of the piece, so the light follows its real
 // shape. Each part is copied, swollen a little along its surface and drawn from inside. Hidden until
 // its device is on.
 function ensureGlow(g, color) {
@@ -743,14 +743,14 @@ function ensureGlow(g, color) {
   g.userData.glowColor = glowColor(color);
 }
 
-// An invisible box over an appliance, so a click on it reaches the appliance.
-export function applianceHitBox(item) {
+// An invisible box over an equipment, so a click on it reaches the equipment.
+export function equipmentHitBox(item) {
   const [w, d] = footprint(item);
   const hit = new THREE.Mesh(new THREE.BoxGeometry(w, 1.4, d), new THREE.MeshBasicMaterial());
   hit.position.set(item.pos[0], (item.y || 0) + 0.7, item.pos[1]);
   hit.rotation.y = THREE.MathUtils.degToRad(item.rot || 0);
   hit.visible = false;
-  hit.userData = { kind: 'appliance', id: item.id };
+  hit.userData = { kind: 'equipment', id: item.id };
   return hit;
 }
 
@@ -765,7 +765,7 @@ export function buildFurniture(items) {
     const g = make(item);
     g.userData.id = item.id;
     // Measured before the piece is moved, so the outline sits round it in its own frame.
-    if (item.appliance) ensureGlow(g, item.glow);
+    if (item.equipment) ensureGlow(g, item.glow);
     g.position.set(item.pos[0], item.y || 0, item.pos[1]);
     g.rotation.y = THREE.MathUtils.degToRad(item.rot || 0);
     const flat = g.userData.flat;

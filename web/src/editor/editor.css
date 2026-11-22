@@ -108,13 +108,14 @@ html.mode-editor, html.mode-editor body { user-select: none; }
 .p-open.door { stroke: #e9a45a; }
 .p-open.open { stroke: #0a0e1a; stroke-dasharray: 0.16 0.1; }
 .p-open.window { stroke: #6fb0ff; }
+.p-open.glass, .p-open.fence, .p-open.fence2 { stroke: #e9a45a; }
 .p-open.sel { stroke-width: 0.3; filter: drop-shadow(0 0 0.12px #fff); }
 
-.p-appl rect { fill: rgba(185, 148, 255, 0.22); stroke: #b994ff; stroke-width: 0.04; cursor: move; }
-.p-appl .led { fill: #3a3d44; pointer-events: none; }
-.p-appl circle.shape { fill: rgba(185, 148, 255, 0.22); stroke: #b994ff; stroke-width: 0.04; cursor: move; }
-.p-appl.linked rect { stroke: #6ee7a0; stroke-width: 0.06; }
-.p-appl.sel rect { fill: rgba(90, 150, 255, 0.28); stroke: #6aa6ff; stroke-width: 0.05; }
+.p-equip rect { fill: rgba(185, 148, 255, 0.22); stroke: #b994ff; stroke-width: 0.04; cursor: move; }
+.p-equip .led { fill: #b994ff; pointer-events: none; }
+.p-equip circle.shape { fill: rgba(185, 148, 255, 0.22); stroke: #b994ff; stroke-width: 0.04; cursor: move; }
+.p-equip.linked rect { stroke: #b994ff; stroke-width: 0.06; }
+.p-equip.sel rect, .p-equip.sel circle.shape { fill: rgba(185, 148, 255, 0.4); stroke: #d4bcff; stroke-width: 0.06; }
 .p-ac rect { fill: #5db2ff; stroke: #0a0e1a; stroke-width: 0.04; cursor: move; }
 .p-ac .flow { stroke: #5db2ff; stroke-width: 0.04; stroke-linecap: round; opacity: 0.6; fill: none; pointer-events: none; }
 .p-ac.sel rect { stroke: #fff; stroke-width: 0.07; }

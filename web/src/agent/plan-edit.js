@@ -295,7 +295,7 @@ export function applyOperations(raw, operations) {
       }
       case 'add_opening': {
         const type = op.type || 'door';
-        if (!['door', 'window', 'open', 'glass'].includes(type)) fail(`${where}: "type" must be door, window, open or glass`);
+        if (!['door', 'window', 'open', 'glass', 'fence', 'fence2'].includes(type)) fail(`${where}: "type" must be door, window, open, glass, fence or fence2`);
         if (!isPoint(op.from) || !isPoint(op.to)) fail(`${where}: "from" and "to" must be [x, z] points on a wall`);
         const o = { type, from: op.from.map(round), to: op.to.map(round) };
         if (Math.hypot(o.to[0] - o.from[0], o.to[1] - o.from[1]) <= 0.01) fail(`${where}: an opening must be at least 1 cm long`);

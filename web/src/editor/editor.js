@@ -5,7 +5,7 @@
 import './editor.css';
 import { normalize, loadRawConfig, LIGHT_KINDS, FLOOR_KINDS, isLinked, levelsOf } from '../config.js';
 import { createWorld } from '../three/world.js';
-import { FURNITURE_TYPES, APPLIANCE_TYPES, WALL_APPLIANCES, GLOW_COLORS, footprint } from '../three/furniture.js';
+import { FURNITURE_TYPES, EQUIPMENT_TYPES, WALL_EQUIPMENT, GLOW_COLORS, footprint } from '../three/furniture.js';
 import {
   isPolygon, roomCorners, roomRadii, hasRounding, roomBounds, roomCenter, roomLabelPoint, roomPoints,
   pointInRoom, pointOnOutline, distanceToSegment, resizeRoom, translateRoom, setRoomPoints, makeRectangular, rectFromPoints,
@@ -23,13 +23,13 @@ const sv = (tag, attrs = {}, ...kids) => {
   return el;
 };
 
-// What the editor calls each appliance (the plan file keeps the type id).
-const APPLIANCE_LABELS = { waterDispenser: 'Water dispenser', pc: 'PC', laptop: 'Laptop', rackServer: 'Rack server', printer: 'Printer', tv: 'TV', wallSwitch: 'Wall switch', wallPlug: 'Wall socket', cctvDome: 'CCTV dome', cctvBullet: 'CCTV bullet', tvWall: 'Wall TV' };
-// Where a new appliance of each type starts, in metres (its "y").
-const APPLIANCE_HEIGHT = { wallSwitch: 1, wallPlug: 0.3, cctvBullet: 2.4, cctvDome: 2.4, tvWall: 0.8 };
+// What the editor calls each equipment (the plan file keeps the type id).
+const EQUIPMENT_LABELS = { waterDispenser: 'Water dispenser', pc: 'PC', laptop: 'Laptop', rackServer: 'Rack server', printer: 'Printer', tv: 'TV', wallSwitch: 'Wall switch', wallPlug: 'Wall socket', cctvDome: 'CCTV dome', cctvBullet: 'CCTV bullet', tvWall: 'Wall TV' };
+// Where a new equipment of each type starts, in metres (its "y").
+const EQUIPMENT_HEIGHT = { wallSwitch: 1, wallPlug: 0.3, cctvBullet: 2.4, cctvDome: 2.4, tvWall: 0.8 };
 
-const KEYS = { room: 'rooms', light: 'lights', ac: 'acs', appliance: 'appliances', furniture: 'furniture', opening: 'openings', scene: 'scenes' };
-const TITLES = { room: 'Rooms', light: 'Lights', ac: 'Air conditioners', appliance: 'Appliances', furniture: 'Furniture', opening: 'Doors & windows', scene: 'Scenes' };
+const KEYS = { room: 'rooms', opening: 'openings', light: 'lights', ac: 'acs', equipment: 'equipment', furniture: 'furniture', scene: 'scenes' };
+const TITLES = { room: 'Rooms', light: 'Lights', ac: 'Air conditioners', equipment: 'Equipment', furniture: 'Furniture', opening: 'Walls', scene: 'Scenes' };
 const FLOOR_FILL = { oak: '#4a3d2e', walnut: '#3c2f28', tile: '#39424b', stone: '#30353c' };
 const WALLS = ['north', 'east', 'south', 'west'];
 const LEVEL_NAMES = ['Ground floor', 'First floor', 'Second floor', 'Third floor', 'Fourth floor', 'Fifth floor'];
@@ -48,7 +48,7 @@ const slug = (t) => String(t).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(
 
 // The standalone editor has no native integrations: drop every trace of them from a plan.
 function stripConnections(plan) {
-  for (const list of [plan.lights || [], plan.acs || [], plan.appliances || []]) {
+  for (const list of [plan.lights || [], plan.acs || [], plan.equipment || []]) {
     for (const device of list) {
       delete device.link;
       delete device.tuya;
@@ -97,7 +97,7 @@ export async function bootEditor(root, options = {}) {
     links = createConnections({
       rerender: () => {
         renderSidebar();
-        if (['connections', 'service', 'light', 'ac', 'appliance'].includes(sel.kind)) renderInspector();
+        if (['connections', 'service', 'light', 'ac', 'equipment'].includes(sel.kind)) renderInspector();
       },
       toast,
       usedBy: () => links.usedMap(doc),
@@ -208,7 +208,7 @@ export async function bootEditor(root, options = {}) {
   const levelRooms = (id = level) => doc.rooms.filter((r) => (r.level ?? firstLevel()) === id);
   // The floor an item is on; null for a scene, which is for the whole home.
   function levelOf(kind, item) {
-    if (kind === 'light' || kind === 'ac' || kind === 'appliance') return roomLevel(item.room);
+    if (kind === 'light' || kind === 'ac' || kind === 'equipment') return roomLevel(item.room);
     if (kind === 'room' || kind === 'furniture' || kind === 'opening') return item.level ?? firstLevel();
     return null;
   }
@@ -453,11 +453,10 @@ export async function bootEditor(root, options = {}) {
   function addable() {
     return [
       ['room', 'room', 'Room', () => add('room')],
+      ['wall', 'opening', 'Wall', () => add('opening', { type: 'door' })],
       ['light', 'bulb', 'Lamp', () => add('light')],
       ['ac', 'ac', 'Air conditioner', () => add('ac')],
-      ['appliance', 'plug', 'Appliance', () => add('appliance')],
-      ['door', 'opening', 'Door', () => add('opening', { type: 'door' })],
-      ['window', 'window', 'Window', () => add('opening', { type: 'window' })],
+      ['equipment', 'plug', 'Equipment', () => add('equipment')],
       ['stairs', 'stairs', 'Stairs', () => add('furniture', { type: 'stairs' })],
       ['furniture', 'furniture', 'Furniture', () => add('furniture')],
     ];
@@ -490,11 +489,11 @@ export async function bootEditor(root, options = {}) {
   }
 
   function previewStore(cfg) {
-    const state = { lights: {}, acs: {}, appliances: {} };
+    const state = { lights: {}, acs: {}, equipment: {} };
     for (const l of cfg.lights) state.lights[l.id] = { on: previewLights, brightness: 0.85, temp: 3200, color: l.color || null };
     for (const a of cfg.acs) state.acs[a.id] = { on: previewLights, mode: 'cool', fan: 'auto', swing: 'swing', sleep: false, target: 23 };
-    // Appliances follow the same switch, so their glow shows with the lights.
-    for (const p of cfg.appliances) state.appliances[p.id] = { on: previewLights };
+    // Equipment follow the same switch, so their glow shows with the lights.
+    for (const p of cfg.equipment) state.equipment[p.id] = { on: previewLights };
     return { state, on: () => () => {} };
   }
 
@@ -545,7 +544,7 @@ export async function bootEditor(root, options = {}) {
     }
     if (kind === 'light') return [item.name || item.id, `${roomName(item.room)} · ${item.type}`];
     if (kind === 'ac') return [item.name || item.id, `${roomName(item.room)} · ${item.mount === 'floor' ? 'standing' : item.mount === 'ceiling' ? 'ceiling' : `${item.wall} wall`}`];
-    if (kind === 'appliance') return [item.name || item.id, `${roomName(item.room)} · ${APPLIANCE_LABELS[item.type] || item.type}`];
+    if (kind === 'equipment') return [item.name || item.id, `${roomName(item.room)} · ${EQUIPMENT_LABELS[item.type] || item.type}`];
     if (kind === 'furniture') return [item.type, roomName(roomAt(item.pos)?.id) || '—'];
     if (kind === 'opening' && !item.to) return [item.type || 'door', ''];
     if (kind === 'opening') return [item.type || 'door', `${fix(Math.hypot(item.to[0] - item.from[0], item.to[1] - item.from[1]))} m`];
@@ -596,7 +595,7 @@ export async function bootEditor(root, options = {}) {
   }
 
   function uniqueId(base) {
-    const ids = new Set([...doc.rooms, ...doc.lights, ...doc.acs, ...doc.appliances, ...doc.scenes].map((x) => x.id));
+    const ids = new Set([...doc.rooms, ...doc.lights, ...doc.acs, ...doc.equipment, ...doc.scenes].map((x) => x.id));
     if (!ids.has(base)) return base;
     for (let i = 2; ; i++) if (!ids.has(`${base}${i}`)) return `${base}${i}`;
   }
@@ -621,25 +620,25 @@ export async function bootEditor(root, options = {}) {
       if (!room) return toast('Add a room first', true);
       if (mount === 'floor' || mount === 'ceiling') {
         // A standing unit goes against a wall; a ceiling cassette goes in the middle of the room.
-        const pos = mount === 'floor' ? applianceSpot(room, center) : [...center];
+        const pos = mount === 'floor' ? equipmentSpot(room, center) : [...center];
         list.push({ id: uniqueId(`${room.id}.ac`), name: `${room.name} ${mount === 'floor' ? 'standing AC' : 'ceiling AC'}`, room: room.id, mount, wall: 'north', pos, ...(mount === 'floor' ? { rot: 0 } : {}) });
       } else {
         const ac = { id: uniqueId(`${room.id}.ac`), name: `${room.name} AC`, room: room.id, wall: 'north', pos: [...center], y: 2.2 };
         snapAC(ac, [center[0], roomBounds(room)[1]], room);
         list.push(ac);
       }
-    } else if (kind === 'appliance') {
+    } else if (kind === 'equipment') {
       if (!room) return toast('Add a room first', true);
       const kind2 = type || 'waterDispenser';
-      if (WALL_APPLIANCES.includes(kind2)) {
+      if (WALL_EQUIPMENT.includes(kind2)) {
         // A switch (1 m up) or a socket (0.3 m up) goes on a wall, like an AC: on the room's north wall to start with.
-        const sw = { id: uniqueId(`${room.id}.${kind2}`), name: `New ${(APPLIANCE_LABELS[kind2] || 'switch').toLowerCase()}`, room: room.id, type: kind2, pos: [...center], rot: 0, y: APPLIANCE_HEIGHT[kind2] };
+        const sw = { id: uniqueId(`${room.id}.${kind2}`), name: `New ${(EQUIPMENT_LABELS[kind2] || 'switch').toLowerCase()}`, room: room.id, type: kind2, pos: [...center], rot: 0, y: EQUIPMENT_HEIGHT[kind2] };
         snapSwitch(sw, [center[0], roomBounds(room)[1]], room);
         list.push(sw);
         // Bring it into view, so it can be found straight away.
         view = { x: sw.pos[0] - 1.5, y: sw.pos[1] - 1.5, w: 3, h: 3 };
       } else {
-        list.push({ id: uniqueId(`${room.id}.appliance`), name: 'New appliance', room: room.id, type: kind2, pos: applianceSpot(room, center), rot: 0, ...(APPLIANCE_HEIGHT[kind2] ? { y: APPLIANCE_HEIGHT[kind2] } : {}) });
+        list.push({ id: uniqueId(`${room.id}.equipment`), name: 'New equipment', room: room.id, type: kind2, pos: equipmentSpot(room, center), rot: 0, ...(EQUIPMENT_HEIGHT[kind2] ? { y: EQUIPMENT_HEIGHT[kind2] } : {}) });
       }
     } else if (kind === 'furniture') {
       list.push(stamp(type === 'stairs' ? { type, pos: center, rot: 0, width: 1, depth: 2.8 } : { type: type || 'sofa', pos: center, rot: 0 }));
@@ -685,7 +684,7 @@ export async function bootEditor(root, options = {}) {
       copy.id = uniqueId(item.id);
       copy.name = `${item.name || item.id} 2`;
       translateRoom(copy, roomBounds(item)[2], 0);
-    } else if (kind === 'light' || kind === 'ac' || kind === 'appliance') {
+    } else if (kind === 'light' || kind === 'ac' || kind === 'equipment') {
       copy.id = uniqueId(item.id);
       for (const key of ['tuya', 'link', 'sensor', 'entity', 'entity_id']) delete copy[key];
       if (kind === 'ac') {
@@ -723,7 +722,7 @@ export async function bootEditor(root, options = {}) {
   function rotate(step = 90) {
     const item = sel.index != null ? doc[KEYS[sel.kind]]?.[sel.index] : null;
     const standing = sel.kind === 'ac' && item?.mount === 'floor';
-    if (!item || !(['furniture', 'light', 'appliance'].includes(sel.kind) || standing)) return;
+    if (!item || !(['furniture', 'light', 'equipment'].includes(sel.kind) || standing)) return;
     snapshot(`rotate${sel.kind}${sel.index}`);
     item.rot = (((item.rot || 0) + step) % 360 + 540) % 360 - 180;
     touch();
@@ -931,14 +930,14 @@ export async function bootEditor(root, options = {}) {
     return center;
   }
 
-  // A free spot for a new appliance: against a wall of its room, clear of furniture and other
-  // appliances, so it is not dropped into the middle of a sofa.
-  function applianceSpot(room, center) {
+  // A free spot for a new equipment: against a wall of its room, clear of furniture and other
+  // equipment, so it is not dropped into the middle of a sofa.
+  function equipmentSpot(room, center) {
     const [x, z, w, d] = roomBounds(room);
     const inset = 0.5;
     const clear = (p) => doc.furniture.every((f) => !here('furniture', f) || !Array.isArray(f.pos)
       || Math.hypot(f.pos[0] - p[0], f.pos[1] - p[1]) > Math.max(...footprint(f)) / 2 + 0.4)
-      && doc.appliances.every((a) => Math.hypot(a.pos[0] - p[0], a.pos[1] - p[1]) > 0.7);
+      && doc.equipment.every((a) => Math.hypot(a.pos[0] - p[0], a.pos[1] - p[1]) > 0.7);
     for (const t of [0.5, 0.3, 0.7, 0.15, 0.85]) {
       const spots = [[x + w * t, z + inset], [x + w * t, z + d - inset], [x + inset, z + d * t], [x + w - inset, z + d * t]];
       for (const s of spots) {
@@ -965,7 +964,7 @@ export async function bootEditor(root, options = {}) {
     doc.rooms = doc.rooms.filter((r) => !ids.has(r.id));
     doc.lights = doc.lights.filter((l) => !ids.has(l.room));
     doc.acs = doc.acs.filter((a) => !ids.has(a.room));
-    doc.appliances = doc.appliances.filter((a) => !ids.has(a.room));
+    doc.equipment = doc.equipment.filter((a) => !ids.has(a.room));
     forgetDevices();
   }
 
@@ -1093,25 +1092,25 @@ export async function bootEditor(root, options = {}) {
       }
     });
 
-    // Appliances: a water dispenser, a PC or a TV. Green outline when linked to a real device.
-    doc.appliances.forEach((a, i) => {
-      if (!here('appliance', a)) return;
+    // Equipment: a water dispenser, a PC or a TV. Green outline when linked to a real device.
+    doc.equipment.forEach((a, i) => {
+      if (!here('equipment', a)) return;
       const linked = withConnections && isLinked(a);
-      // An ordinary appliance is drawn at its real footprint (a TV is 1.7 m wide), with its status light in the corner.
+      // An ordinary equipment is drawn at its real footprint (a TV is 1.7 m wide), with its status light in the corner.
       const [fw, fd] = footprint(a);
       kids.push(sv('g', {
-        class: `p-appl${isSel('appliance', i) ? ' sel' : ''}${linked ? ' linked' : ''}`, 'data-kind': 'appliance', 'data-index': i,
+        class: `p-equip${isSel('equipment', i) ? ' sel' : ''}${linked ? ' linked' : ''}`, 'data-kind': 'equipment', 'data-index': i,
         transform: `translate(${a.pos[0]} ${a.pos[1]}) rotate(${-(a.rot || 0)})`,
-      }, big ? sv('circle', { r: WALL_APPLIANCES.includes(a.type) ? 0.3 : Math.max(fw, fd) / 2 + 0.1, class: 'hit' }) : null,
-        // A wall switch is a small plate on its wall; other appliances are a box with a status light.
+      }, big ? sv('circle', { r: WALL_EQUIPMENT.includes(a.type) ? 0.3 : Math.max(fw, fd) / 2 + 0.1, class: 'hit' }) : null,
+        // A wall switch is a small plate on its wall; other equipment are a box with a status light.
         a.type === 'cctvDome' || a.type === 'cctvBullet'
           ? sv('circle', { r: 0.1, class: 'shape' })
-          : WALL_APPLIANCES.includes(a.type)
+          : WALL_EQUIPMENT.includes(a.type)
             ? sv('rect', { x: -0.1 * (a.gang || 1), y: -0.07, width: 0.2 * (a.gang || 1), height: 0.14, rx: 0.03 })
             : sv('rect', { x: -fw / 2, y: -fd / 2, width: fw, height: fd, rx: 0.04 }),
         sv('circle', a.type === 'cctvDome' || a.type === 'cctvBullet'
           ? { cx: 0.06, cy: 0, r: 0.018, class: 'led' }
-          : WALL_APPLIANCES.includes(a.type)
+          : WALL_EQUIPMENT.includes(a.type)
             ? { cx: 0.1 * (a.gang || 1) - 0.035, cy: 0, r: 0.022, class: 'led' }
             : { cx: fw / 2 - 0.05, cy: -fd / 2 + 0.05, r: 0.035, class: 'led' })));
     });
@@ -1542,10 +1541,10 @@ export async function bootEditor(root, options = {}) {
       } else snapAC(ac, [px, pz]);
     } else {
       const item = doc[KEYS[drag.kind]][drag.index];
-      if (drag.kind === 'appliance' && WALL_APPLIANCES.includes(item.type)) snapSwitch(item, [px, pz]);
+      if (drag.kind === 'equipment' && WALL_EQUIPMENT.includes(item.type)) snapSwitch(item, [px, pz]);
       else {
         item.pos = [fix(drag.pos[0] + dx), fix(drag.pos[1] + dz)];
-        if (drag.kind === 'light' || drag.kind === 'appliance') {
+        if (drag.kind === 'light' || drag.kind === 'equipment') {
           const room = roomAt(item.pos);
           if (room) item.room = room.id;
         }
@@ -1918,18 +1917,18 @@ export async function bootEditor(root, options = {}) {
         h('p.note', 'Dragging the unit on the plan snaps it to the nearest wall of its room. On a diagonal wall it keeps its own angle.')),
       withConnections ? links.deviceSection(item, 'ac', linkHooks) : haEntitySection(item),
       withConnections ? links.sensorSection(item, linkHooks) : null);
-    } else if (kind === 'appliance') {
+    } else if (kind === 'equipment') {
       head(item.name || item.id, `id: ${item.id}`);
       // Same order as the furniture inspector: type, position, rotation, options, buttons; then the device link.
-      nodes.push(section('Appliance',
+      nodes.push(section('Equipment',
         bind('Name', text(), prop(item, 'name', '')),
-        bind('Type', choice(APPLIANCE_TYPES.map((t) => [t, APPLIANCE_LABELS[t] || t])), {
+        bind('Type', choice(EQUIPMENT_TYPES.map((t) => [t, EQUIPMENT_LABELS[t] || t])), {
           get: () => item.type,
           // A switch sits on a wall at about 1 m, so it gets that height when it becomes one.
           set: (v) => {
             item.type = v;
-            if (APPLIANCE_HEIGHT[v]) item.y = APPLIANCE_HEIGHT[v];
-            if (WALL_APPLIANCES.includes(v)) {
+            if (EQUIPMENT_HEIGHT[v]) item.y = EQUIPMENT_HEIGHT[v];
+            if (WALL_EQUIPMENT.includes(v)) {
               snapSwitch(item, item.pos);
               // Bring the switch into view, as adding one does.
               view = { x: item.pos[0] - 1.5, y: item.pos[1] - 1.5, w: 3, h: 3 };
@@ -1940,7 +1939,7 @@ export async function bootEditor(root, options = {}) {
         row(bind('X', number(), { ...at(item, 'pos', 0), parse: parseNum }), bind('Z', number(), { ...at(item, 'pos', 1), parse: parseNum })),
         row(bind('Rotation, °', number(15), { ...prop(item, 'rot', 0), parse: parseNum }),
           bind('Height, m', number(0.05), { ...prop(item, 'y', 0), parse: parseNum })),
-        WALL_APPLIANCES.includes(item.type)
+        WALL_EQUIPMENT.includes(item.type)
           ? bind('Colour', choice([['white', 'White'], ['black', 'Black']]), { ...prop(item, 'color', 'white'), event: 'change' })
           : null,
         item.type === 'wallSwitch'
@@ -1977,7 +1976,7 @@ export async function bootEditor(root, options = {}) {
     } else if (kind === 'opening') {
       head(item.type || 'door', 'A gap or a window in a wall');
       nodes.push(section('Opening',
-        bind('Type', choice([['door', 'Door'], ['open', 'Open passage'], ['window', 'Window'], ['glass', 'Glass wall']]), { ...prop(item, 'type', 'door'), event: 'change' }),
+        bind('Type', choice([['door', 'Door'], ['open', 'Open passage'], ['window', 'Window'], ['glass', 'Glass wall'], ['fence', 'Fence'], ['fence2', 'Fence 2']]), { ...prop(item, 'type', 'door'), event: 'change' }),
         row(bind('From X', number(), { ...at(item, 'from', 0), parse: parseNum }), bind('From Z', number(), { ...at(item, 'from', 1), parse: parseNum })),
         row(bind('To X', number(), { ...at(item, 'to', 0), parse: parseNum }), bind('To Z', number(), { ...at(item, 'to', 1), parse: parseNum })),
         item.type === 'window' ? row(bind('Sill, m', number(), { ...prop(item, 'sill', 0.85), parse: parseNum }),
@@ -2454,7 +2453,7 @@ export async function bootEditor(root, options = {}) {
       const [px, pz] = planPoint(ev);
       const inRoom = room && pointInRoom(room, [px, pz]);
       const handle = ['resize', 'oend', 'corner', 'radius'].includes(kind);
-      if (handle || (kind && kind !== 'none' && isSel(kind, index)) || (inRoom && kind !== 'light' && kind !== 'ac' && kind !== 'appliance')) {
+      if (handle || (kind && kind !== 'none' && isSel(kind, index)) || (inRoom && kind !== 'light' && kind !== 'ac' && kind !== 'equipment')) {
         const what = handle || isSel(kind, index) ? [kind, index] : ['room', sel.index];
         // The view holds still while something is dragged past the plan's edge.
         if (!view) view = fitBox();
@@ -2542,7 +2541,7 @@ export async function bootEditor(root, options = {}) {
       },
       headActions() {
         const nodes = [];
-        if (sel.kind === 'furniture' || sel.kind === 'appliance' || (sel.kind === 'ac' && doc.acs[sel.index]?.mount === 'floor')
+        if (sel.kind === 'furniture' || sel.kind === 'equipment' || (sel.kind === 'ac' && doc.acs[sel.index]?.mount === 'floor')
           || (sel.kind === 'light' && doc.lights[sel.index]?.type === 'strip')) {
           nodes.push(h('button.p-icon', { 'aria-label': 'Turn 90°', onclick: () => { haptic('light'); rotate(90); } }, icon('rotateCw', 18, 2)));
         }
@@ -2608,7 +2607,7 @@ export async function bootEditor(root, options = {}) {
     const devices = [
       ...doc.lights.map((d) => ({ d, kind: 'light' })),
       ...doc.acs.map((d) => ({ d, kind: 'ac' })),
-      ...doc.appliances.map((d) => ({ d, kind: 'light' })),
+      ...doc.equipment.map((d) => ({ d, kind: 'light' })),
     ];
     const groups = [];
     for (const l of levels) {

@@ -39,7 +39,7 @@ public struct RoomScan: Codable, Equatable, Sendable {
         }
     }
 
-    /// A piece of furniture or an appliance: a box.
+    /// A piece of furniture or an equipment: a box.
     public struct Object: Codable, Equatable, Sendable {
         /// RoomPlan's category: "bed", "sofa", "table", "storage", "stove"…
         public var category: String

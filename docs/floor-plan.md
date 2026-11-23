@@ -217,7 +217,7 @@ and its status light glows green while it is on. Same fields as `acs`, except th
 | Field | Meaning |
 | --- | --- |
 | `id`, `name`, `room` | As for lights |
-| `type` | `waterDispenser`, `pc` (an iMac-style all-in-one), `laptop` (a MacBook-style laptop; set `y` to a desk's height, about `0.74`), `rackServer` (a server rack, 1.2 m high), `printer` (a desk printer), `tv`, `tvWall` (a TV on a wall bracket, `y` is its bottom edge, `0.8` by default), `wallSwitch` (a light switch on a wall plate; `y` is the bottom of the plate, `1` by default; `gang` is `1` (default), `2` or `3`) or `wallPlug` (a wall socket, `0.3` by default), `cctvBullet` and `cctvDome` (ceiling cameras, hanging from their `y`, `2.4` by default). All take `color`: `white` (default) or `black` |
+| `type` | `waterDispenser`, `pc` (an iMac-style all-in-one), `laptop` (a MacBook-style laptop; starts at `y` `0.78`, the office table's top), `rackServer` (a server rack, 1.2 m high), `printer` (a desk printer), `tv`, `tvWall` (a TV on a wall bracket, `y` is its bottom edge, `0.8` by default), `wallSwitch` (a light switch on a wall plate; `y` is the bottom of the plate, `1` by default; `gang` is `1` (default), `2` or `3`) or `wallPlug` (a wall socket, `0.3` by default), `cctvBullet` and `cctvDome` (ceiling cameras, hanging from their `y`, `2.4` by default). All take `color`: `white` (default) or `black` |
 | `pos` | `[x, z]` of its centre |
 | `rot` | Optional: the angle in degrees |
 | `glow` | Optional: the colour of its outline and LED when it is on: `warm` (default, a warm yellow), `blue`, `white`, `orange`, `red`, `purple`, or any `"#rrggbb"`. The outline only shows while the linked device is on |
@@ -230,7 +230,7 @@ and its status light glows green while it is on. Same fields as `acs`, except th
 
 A `tv` can also stay in `furniture` as plain decoration; the same type in `equipment` is clickable.
 
-A `pc` has no desk of its own. To put it on one, set the equipment's `y` to the desk's height (about `0.74`).
+A `pc` has no desk of its own. To put it on one, it starts at `y` `0.78`, the height of the office table's top, so set `y` to `0` for the floor or to a desk's height.
 
 ## `scenes`
 

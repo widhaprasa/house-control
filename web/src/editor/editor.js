@@ -26,7 +26,8 @@ const sv = (tag, attrs = {}, ...kids) => {
 // What the editor calls each equipment (the plan file keeps the type id).
 const EQUIPMENT_LABELS = { waterDispenser: 'Water dispenser', pc: 'PC', laptop: 'Laptop', rackServer: 'Rack server', printer: 'Printer', tv: 'TV', wallSwitch: 'Wall switch', wallPlug: 'Wall socket', cctvDome: 'CCTV dome', cctvBullet: 'CCTV bullet', tvWall: 'Wall TV' };
 // Where a new equipment of each type starts, in metres (its "y").
-const EQUIPMENT_HEIGHT = { wallSwitch: 1, wallPlug: 0.3, cctvBullet: 2.4, cctvDome: 2.4, tvWall: 0.8 };
+// pc and laptop start on a desk: the office table's top (0.73 m legs + 0.05 m top = 0.78 m).
+const EQUIPMENT_HEIGHT = { wallSwitch: 1, wallPlug: 0.3, cctvBullet: 2.4, cctvDome: 2.4, tvWall: 0.8, pc: 0.78, laptop: 0.78 };
 
 const KEYS = { room: 'rooms', opening: 'openings', light: 'lights', ac: 'acs', equipment: 'equipment', furniture: 'furniture', scene: 'scenes' };
 const TITLES = { room: 'Rooms', light: 'Lights', ac: 'Air conditioners', equipment: 'Equipment', furniture: 'Furniture', opening: 'Walls', scene: 'Scenes' };
@@ -125,6 +126,11 @@ export async function bootEditor(root, options = {}) {
   const plan = sv('svg', { class: 'plan', tabindex: 0 });
   const inspector = h('div.inspector');
   const previewHost = h('div.preview');
+  // A double-click on the empty space around the house sends the camera back to its default view.
+  previewHost.addEventListener('dblclick', (ev) => {
+    if (!world || world.pickAt(ev.clientX, ev.clientY)) return; // on the house: leave it to the click
+    world.resetView();
+  });
   const previewToggle = h('button.chip', { onclick: () => { previewLights = !previewLights; schedulePreview(0); } });
 
   if (isPhone) buildPhoneLayout();
